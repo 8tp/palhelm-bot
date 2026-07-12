@@ -5,9 +5,7 @@
   <img src="https://img.shields.io/badge/Node-%3E%3D20-339933" alt="Node >= 20">
   <img src="https://img.shields.io/badge/discord.js-14-5865F2" alt="discord.js 14">
   <a href="https://docs.palhelm.com"><img src="https://img.shields.io/badge/docs-docs.palhelm.com-6b7f3f" alt="docs.palhelm.com"></a>
-  <!-- Enable once the repo is public:
   <a href="https://github.com/8tp/palhelm-bot/actions/workflows/ci.yml"><img src="https://github.com/8tp/palhelm-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  -->
 </p>
 
 A Discord companion bot for [Palhelm](https://github.com/8tp/palhelm), the self-hosted Palworld admin panel. It posts live server notifications (backups, shutdown countdowns, optional join/leave) into a channel, and answers slash commands with data from the panel, including rendered map and pal-icon images.
