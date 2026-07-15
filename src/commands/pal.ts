@@ -87,7 +87,7 @@ export const palCommand: Command = {
     const embed = baseEmbed(`🐾 Lv ${pal.level} ${truncate(known.name, 190)}${palVariantTags(pal)}`)
       .setDescription(`Owned by **${truncate(owner, 100)}** · ${placementLabel(pal)}`)
       .addFields(instanceFields(pal, known, owner))
-      .setFooter({ text: truncate(`${metadataLabel(ctx.knowledge)} · instance ${pal.instanceId}`, 2048) });
+      .setFooter({ text: truncate(metadataLabel(ctx.knowledge), 2048) });
     const icon = await assetsFor(ctx.session).palIcon(known.internalId);
     if (icon) {
       embed.setThumbnail("attachment://pal-icon.png");
@@ -105,7 +105,7 @@ export function instanceFields(pal: RosterPal, known: PalKnowledge | null, owner
   if (known) {
     const work = [...known.workSuitabilities]
       .sort((a, b) => b.level - a.level || a.name.localeCompare(b.name))
-      .map((item) => `${item.name} **${item.level}**`)
+      .map((item) => `${item.name} **Lv ${item.level}**`)
       .join(" · ") || "No work suitability";
     const learned = known.learnset
       .filter((skill) => skill.unlockLevel <= pal.level)
@@ -136,8 +136,8 @@ export function instanceFields(pal: RosterPal, known: PalKnowledge | null, owner
   return fields;
 }
 
-function placementLabel(pal: RosterPal): string {
-  if (pal.placement === "base" && pal.baseId) return `Base worker · ${pal.baseId.slice(0, 8)}`;
+export function placementLabel(pal: RosterPal): string {
+  if (pal.placement === "base" && pal.baseId) return "Base worker";
   if (pal.inParty) return `Party slot ${(pal.partySlot ?? 0) + 1}`;
   if (pal.boxPage !== undefined && pal.boxPage !== null) return `Box ${pal.boxPage + 1}, slot ${(pal.boxSlot ?? 0) + 1}`;
   return "Stored/deployed outside a personal box";
