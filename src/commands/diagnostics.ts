@@ -20,6 +20,7 @@ export const diagnosticsCommand: Command = {
     // diagnostics must not spend Integration API quota on a snapshot refresh.
     const snapshot = ctx.snapshots.peek();
     const knowledge = ctx.knowledge.status();
+    const locations = ctx.locations?.status() ?? { available: false, rowCount: 0, generatedAt: null };
     const trackingStartedAt = ctx.observations.trackingStartedAt();
     const lastBackupAt = ctx.observations.lastBackupAt();
     const pendingMilestones = ctx.observations.nextMilestoneBatch();
@@ -40,6 +41,12 @@ export const diagnosticsCommand: Command = {
                   : null,
               ].filter(Boolean).join("\n")
             : "⚠️ Not ready — knowledge commands will degrade safely",
+        },
+        {
+          name: "Encounter locations",
+          value: locations.available
+            ? `✅ ${locations.rowCount} attributed wiki rows · cached ${locations.generatedAt ? discordRelative(locations.generatedAt) : "at an unknown time"}`
+            : "⬜ Local location cache not installed; /dex falls back to cached web search",
         },
         {
           name: "History coverage",

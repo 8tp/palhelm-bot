@@ -1,6 +1,8 @@
 import type { IntegrationClient } from "../palhelm/integration.js";
 import { ApiError, RateLimitedError } from "../palhelm/integration.js";
 import type {
+  GameDataWorldSummary,
+  GameDataWorldWorkers,
   Guild,
   MetricsCurrent,
   PlayerSummary,
@@ -15,6 +17,10 @@ export interface WorldSnapshot {
   guilds: Guild[];
   metricsCurrent: MetricsCurrent | null;
   server: ServerInfo | null;
+  /** Optional aggregate-only Palworld Game Data API snapshot. */
+  worldSummary?: GameDataWorldSummary | null;
+  /** Optional exact-linked live base workers from the same panel poller cache. */
+  liveWorkers?: GameDataWorldWorkers | null;
   /** True when any save-derived response reports parser drift. */
   formatDrift: boolean;
   /** Newest parse timestamp reported by the atomic save-derived responses. */
@@ -32,6 +38,8 @@ export interface SnapshotServiceOptions {
   maxBackoffMs?: number;
   /** Initial retry delay after a transient non-rate-limit failure. */
   failureBackoffMs?: number;
+  /** Maximum age of a last-good optional live-world sample. */
+  liveDataMaxAgeMs?: number;
   /** Test seam for the clock. */
   now?: () => number;
   /**
@@ -52,12 +60,13 @@ type CoreResult<T> = {
 const DEFAULT_POLL_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_MAX_BACKOFF_MS = 5 * 60_000;
 const DEFAULT_FAILURE_BACKOFF_MS = 5_000;
+const DEFAULT_LIVE_DATA_MAX_AGE_MS = 10 * 60_000;
 
 /**
  * One polling/cache boundary for all consumers of the integration API.
  *
  * Player, Pal, and guild responses are committed atomically. Optional live
- * telemetry keeps its previous last-good value when an individual call fails.
+ * telemetry has a bounded last-good fallback, which is explicitly marked stale.
  */
 export class SnapshotService {
   private snapshot: WorldSnapshot | null = null;
@@ -67,6 +76,7 @@ export class SnapshotService {
   private readonly pollIntervalMs: number;
   private readonly maxBackoffMs: number;
   private readonly failureBackoffMs: number;
+  private readonly liveDataMaxAgeMs: number;
   private readonly now: () => number;
   private readonly resolvePalName?: (characterId: string, rawDisplayName: string) => string;
   private readonly isCanonicalPal?: (characterId: string) => boolean;
@@ -79,6 +89,7 @@ export class SnapshotService {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
     this.failureBackoffMs = options.failureBackoffMs ?? DEFAULT_FAILURE_BACKOFF_MS;
+    this.liveDataMaxAgeMs = options.liveDataMaxAgeMs ?? DEFAULT_LIVE_DATA_MAX_AGE_MS;
     this.now = options.now ?? Date.now;
     this.resolvePalName = options.resolvePalName;
     this.isCanonicalPal = options.isCanonicalPal;
@@ -138,7 +149,13 @@ export class SnapshotService {
   }
 
   private async fetchSnapshot(): Promise<WorldSnapshot> {
-    const [core, metricsResult, serverResult] = await Promise.all([
+    const worldSummaryCall = (this.client as IntegrationClient & {
+      worldSummary?: IntegrationClient["worldSummary"];
+    }).worldSummary;
+    const worldWorkersCall = (this.client as IntegrationClient & {
+      worldWorkers?: IntegrationClient["worldWorkers"];
+    }).worldWorkers;
+    const [core, metricsResult, serverResult, worldSummaryResult, worldWorkersResult] = await Promise.all([
       Promise.all([
         this.client.players(),
         this.client.pals(),
@@ -152,6 +169,24 @@ export class SnapshotService {
         (value) => ({ ok: true as const, value }),
         (error: unknown) => ({ ok: false as const, error }),
       ),
+      typeof worldSummaryCall === "function"
+        ? worldSummaryCall.call(this.client).then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          )
+        : Promise.resolve({
+            ok: false as const,
+            error: new ApiError(404, "unsupported", "world summary endpoint unsupported"),
+          }),
+      typeof worldWorkersCall === "function"
+        ? worldWorkersCall.call(this.client).then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          )
+        : Promise.resolve({
+            ok: false as const,
+            error: new ApiError(404, "unsupported", "world workers endpoint unsupported"),
+          }),
     ]);
 
     const [players, pals, guilds] = core as [
@@ -160,12 +195,19 @@ export class SnapshotService {
       CoreResult<Guild[]>,
     ];
     const previous = this.snapshot;
+    const now = this.now();
     const server = serverResult.ok
       ? serverResult.value.data
       : previous?.server ?? null;
     // Null means this refresh had no fresh metric sample. Presence can say so,
     // and digest aggregation must not repeatedly count an old value as current.
     const metricsCurrent = metricsResult.ok ? metricsResult.value.data : null;
+    const worldSummary = worldSummaryResult.ok
+      ? freshLivePayload(worldSummaryResult.value.data, now, this.liveDataMaxAgeMs)
+      : fallbackLivePayload(previous?.worldSummary, worldSummaryResult.error, now, this.liveDataMaxAgeMs);
+    const liveWorkers = worldWorkersResult.ok
+      ? freshLivePayload(worldWorkersResult.value.data, now, this.liveDataMaxAgeMs)
+      : fallbackLivePayload(previous?.liveWorkers, worldWorkersResult.error, now, this.liveDataMaxAgeMs);
     const parseTimes = [
       players.lastParseAt,
       pals.lastParseAt,
@@ -181,6 +223,8 @@ export class SnapshotService {
       guilds: guilds.data,
       metricsCurrent,
       server,
+      worldSummary,
+      liveWorkers,
       formatDrift:
         players.formatDrift === true ||
         pals.formatDrift === true ||
@@ -195,7 +239,7 @@ export class SnapshotService {
               Date.parse(value) > Date.parse(latest) ? value : latest,
             )
           : null,
-      capturedAt: new Date(this.now()).toISOString(),
+      capturedAt: new Date(now).toISOString(),
     };
 
     this.snapshot = next;
@@ -228,6 +272,39 @@ export class SnapshotService {
       await waitFor(delayMs, signal);
     }
   }
+}
+
+type LivePayload = Pick<GameDataWorldSummary, "state" | "capturedAt">;
+
+function freshLivePayload<T extends LivePayload>(
+  payload: T,
+  now: number,
+  maxAgeMs: number,
+): T | null {
+  if (payload.state !== "ready" && payload.state !== "stale") return payload;
+  const capturedAt = payload.capturedAt === null ? Number.NaN : Date.parse(payload.capturedAt);
+  const ageMs = now - capturedAt;
+  return Number.isFinite(capturedAt) && ageMs >= 0 && ageMs <= maxAgeMs ? payload : null;
+}
+
+function fallbackLivePayload<T extends LivePayload>(
+  previous: T | null | undefined,
+  error: unknown,
+  now: number,
+  maxAgeMs: number,
+): T | null {
+  if (isTerminalOptionalFailure(error) || !previous) return null;
+  const fresh = freshLivePayload(previous, now, maxAgeMs);
+  if (!fresh || (fresh.state !== "ready" && fresh.state !== "stale")) return null;
+  return { ...fresh, state: "stale" };
+}
+
+function isTerminalOptionalFailure(error: unknown): boolean {
+  return error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429;
 }
 
 function snapshotErrorLabel(error: unknown): string {

@@ -9,12 +9,14 @@ const baseUrl = required("PALHELM_BASE_URL").replace(/\/+$/, "");
 const key = required("PALHELM_INTEGRATION_KEY");
 const client = new IntegrationClient(baseUrl, key);
 
-const [players, pals, guilds, server, metrics] = await Promise.all([
+const [players, pals, guilds, server, metrics, worldSummary, liveWorkers] = await Promise.all([
   client.players(),
   client.pals(),
   client.guilds(),
   client.server(),
   client.metricsCurrent(),
+  client.worldSummary(),
+  client.worldWorkers(),
 ]);
 
 for (const player of players.data) {
@@ -23,6 +25,14 @@ for (const player of players.data) {
   optionalNonNegative(player.paldeckUnlocked, "players.paldeckUnlocked");
 }
 const publicBaseIds = new Set(guilds.data.flatMap((guild) => guild.bases.map((base) => base.id)));
+for (const worker of liveWorkers.data.workers) {
+  if (!worker.instanceId || !worker.baseId || !publicBaseIds.has(worker.baseId)) {
+    throw new Error("live worker must have an exact Pal identity and public base join");
+  }
+  if (!(worker.hpPercent === null || (worker.hpPercent >= 0 && worker.hpPercent <= 100))) {
+    throw new Error("live worker hpPercent must be null or a percentage");
+  }
+}
 const occupiedBaseIds = new Set<string>();
 let baseWorkers = 0;
 for (const pal of pals.data) {
@@ -51,6 +61,9 @@ console.log(
     `occupiedBases=${occupiedBaseIds.size}`,
     `server=${server.data ? "available" : "unavailable"}`,
     `metrics=${metrics.data ? "available" : "unavailable"}`,
+    `gameData=${worldSummary.data.state}`,
+    `gameDataActors=${Object.values(worldSummary.data.counts).reduce((sum, value) => sum + value, 0)}`,
+    `liveWorkers=${liveWorkers.data.workers.length}`,
   ].join(" "),
 );
 

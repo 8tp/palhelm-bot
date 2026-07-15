@@ -148,6 +148,60 @@ export interface MetricsCurrent {
   baseCamps: number;
 }
 
+/** Aggregate-only Game Data API cache exposed by GET /world/summary. */
+export interface GameDataWorldSummary {
+  state: "disabled" | "pending" | "ready" | "stale" | "unsupported" | "unauthorized" | "unavailable";
+  capturedAt: string | null;
+  lastAttemptAt: string | null;
+  fps: number;
+  fpsAvg: number;
+  counts: {
+    players: number;
+    partyPals: number;
+    basePals: number;
+    wildPals: number;
+    npcs: number;
+    palBoxes: number;
+    unknown: number;
+  };
+  activity?: LiveWorkerActivityCounts;
+  linkedBasePals?: number;
+}
+
+export interface LiveWorkerActivityCounts {
+  working: number;
+  transporting: number;
+  eating: number;
+  sleeping: number;
+  idle: number;
+  inactive: number;
+  combat: number;
+  incapacitated: number;
+  moving: number;
+  unknown: number;
+}
+
+export interface LiveBaseWorker {
+  instanceId: string;
+  characterId: string;
+  displayName: string;
+  isBoss: boolean;
+  level: number;
+  hpPercent: number | null;
+  active: boolean | null;
+  activity: keyof LiveWorkerActivityCounts;
+  baseId: string;
+  ownerUid?: string;
+  ownerName?: string;
+  ownerSource?: string;
+}
+
+export interface GameDataWorldWorkers {
+  state: GameDataWorldSummary["state"];
+  capturedAt: string | null;
+  workers: LiveBaseWorker[];
+}
+
 /** Strictly redacted recent activity from GET /api/integration/v1/events. */
 export interface IntegrationEvent {
   at: string;

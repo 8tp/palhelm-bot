@@ -4,6 +4,8 @@
 
 import type {
   Guild,
+  GameDataWorldSummary,
+  GameDataWorldWorkers,
   IntegrationEnvelope,
   IntegrationEvent,
   MapDataset,
@@ -145,6 +147,16 @@ export class IntegrationClient {
 
   metricsCurrent() {
     return this.get<MetricsCurrent>("/metrics/current");
+  }
+
+  /** Cached aggregate-only Game Data API status; never contains actor identities or locations. */
+  worldSummary() {
+    return this.get<GameDataWorldSummary>("/world/summary");
+  }
+
+  /** Exact save-linked live base workers; the panel omits locations and runtime actor IDs. */
+  worldWorkers() {
+    return this.get<GameDataWorldWorkers>("/world/workers");
   }
 
   /** Bounded, server-redacted activity. Older panels may return ApiError(404). */

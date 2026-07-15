@@ -48,6 +48,71 @@ describe("IntegrationClient", () => {
     ]);
   });
 
+  it("loads the aggregate-only Game Data API world summary", async () => {
+    let requested = "";
+    const started = await startServer((request, response) => {
+      requested = request.url ?? "";
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({
+        data: {
+          state: "ready", capturedAt: "2026-07-15T12:00:00Z", lastAttemptAt: "2026-07-15T12:00:00Z",
+          fps: 59, fpsAvg: 59.2,
+          counts: { players: 0, partyPals: 0, basePals: 27, wildPals: 0, npcs: 0, palBoxes: 20, unknown: 0 },
+        },
+      }));
+    });
+    server = started.server;
+
+    const result = await new IntegrationClient(started.baseUrl, "key").worldSummary();
+
+    expect(requested).toBe("/api/integration/v1/world/summary");
+    expect(result.data).toMatchObject({ state: "ready", counts: { basePals: 27, palBoxes: 20 } });
+  });
+
+  it("loads world workers with bearer auth and revalidates the endpoint with ETag", async () => {
+    const validators: Array<string | undefined> = [];
+    const authorizations: Array<string | undefined> = [];
+    const paths: string[] = [];
+    let calls = 0;
+    const started = await startServer((request, response) => {
+      calls++;
+      paths.push(request.url ?? "");
+      authorizations.push(request.headers.authorization);
+      validators.push(request.headers["if-none-match"]);
+      if (calls === 1) {
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("ETag", '"workers-v1"');
+        response.end(JSON.stringify({
+          data: {
+            state: "ready",
+            capturedAt: "2026-07-15T12:00:00Z",
+            workers: [{
+              instanceId: "worker-1", characterId: "Anubis", displayName: "Anubis",
+              isBoss: false, level: 35, hpPercent: 100, active: true, activity: "working", baseId: "base-1",
+            }],
+          },
+        }));
+      } else {
+        response.statusCode = 304;
+        response.end();
+      }
+    });
+    server = started.server;
+    const client = new IntegrationClient(started.baseUrl, "test-key");
+
+    const first = await client.worldWorkers();
+    const second = await client.worldWorkers();
+
+    expect(paths).toEqual([
+      "/api/integration/v1/world/workers",
+      "/api/integration/v1/world/workers",
+    ]);
+    expect(authorizations).toEqual(["Bearer test-key", "Bearer test-key"]);
+    expect(validators).toEqual([undefined, '"workers-v1"']);
+    expect(first.data.workers[0]).toMatchObject({ characterId: "Anubis", activity: "working" });
+    expect(second).toEqual(first);
+  });
+
   it("walks pagination until nextCursor is null", async () => {
     const cursors: Array<string | null> = [];
     const started = await startServer((request, response) => {
