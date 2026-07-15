@@ -5,7 +5,7 @@ import type { RosterPal } from "../src/types.js";
 
 const pal = {
   instanceId: "p1", characterId: "Anubis", displayName: "Anubis", level: 35,
-  isAlpha: false, isLucky: false, ownerUid: "u1", ownerName: "Hunter",
+  isAlpha: false, isLucky: false, ownerUid: "u1", ownerName: "Player One",
   inParty: true, partySlot: 1,
 } satisfies RosterPal;
 
@@ -20,7 +20,7 @@ const known = {
 
 describe("/pal detail", () => {
   it("labels species knowledge separately from unavailable individual save data", () => {
-    const fields = instanceFields(pal, known, "Hunter");
+    const fields = instanceFields(pal, known, "Player One");
     expect(fields.find((field) => field.name.startsWith("Work suitability"))?.value).toContain("Mining **4**");
     expect(fields.find((field) => field.name.startsWith("Learnset"))?.name).toContain("not equipped skills");
     expect(fields.find((field) => field.name === "Individual save data")?.value).toContain("unavailable for this Pal");
@@ -30,7 +30,7 @@ describe("/pal detail", () => {
     const fields = instanceFields({
       ...pal, hp: 1234, gender: "male", talents: { hp: 75, melee: 50, shot: 90, defense: 60 },
       passiveSkillIds: ["Legend"], equippedSkillIds: ["RockLance"],
-    }, known, "Hunter");
+    }, known, "Player One");
     const detail = fields.find((field) => field.name === "Individual save data")?.value;
     expect(detail).toContain("Current HP: 1234");
     expect(detail).toContain("Passives: Legend");

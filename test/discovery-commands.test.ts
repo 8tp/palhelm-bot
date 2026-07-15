@@ -25,8 +25,8 @@ const snapshot: WorldSnapshot = {
       playtimeSec: 200 * 3_600,
     },
     {
-      uid: "hunter",
-      name: "Hunter",
+      uid: "player-one",
+      name: "Player One",
       online: false,
       level: 35,
       guildId: "g1",
@@ -55,8 +55,8 @@ const snapshot: WorldSnapshot = {
       level: 30,
       isAlpha: false,
       isLucky: true,
-      ownerUid: "hunter",
-      ownerName: "Hunter",
+      ownerUid: "player-one",
+      ownerName: "Player One",
       inParty: false,
     },
     {
@@ -76,7 +76,7 @@ const snapshot: WorldSnapshot = {
       name: "Wayfarers",
       adminUid: "luna",
       memberCount: 2,
-      members: [{ uid: "luna", name: "Luna" }, { uid: "hunter", name: "Hunter" }],
+      members: [{ uid: "luna", name: "Luna" }, { uid: "player-one", name: "Player One" }],
       bases: [{ id: "b1", location: { x: 1, y: 2 }, level: 20 }],
     },
   ],
@@ -167,8 +167,8 @@ describe("records, collection, and dex commands", () => {
         characterId: "BOSS_GrassMammoth",
         displayName: "Mammorest",
         level: 50,
-        ownerUid: "hunter",
-        ownerName: "Hunter",
+        ownerUid: "player-one",
+        ownerName: "Player One",
       }, {
         ...snapshot.pals[1]!,
         characterId: "GrassMammoth",
@@ -179,7 +179,7 @@ describe("records, collection, and dex commands", () => {
     const records = harness({}, bossSnapshot);
     await recordsCommand.execute(records.interaction as never, records.ctx as never);
     const value = json(records.editReply).fields?.find((field: { name: string }) => field.name === "Highest-level Pal")?.value;
-    expect(value).toContain("Lv 50 Mammorest 👑 — Hunter");
+    expect(value).toContain("Lv 50 Mammorest 👑 — Player One");
     expect(value).not.toContain("BOSS_");
 
     const collection = harness({ player: null }, bossSnapshot);

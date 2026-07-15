@@ -244,10 +244,10 @@ describe("answerQuestion tool loop", () => {
       .mockRejectedValueOnce(new OpenRouterError("timeout", "still slow", true));
     const snapshot = {
       capturedAt: new Date().toISOString(), lastParseAt: null, formatDrift: false, metricsCurrent: null, server: null,
-      players: [{ uid: "u1", name: "Hunter", online: true, level: 40, guildId: "g1", guildName: "Guild", firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-15T00:00:00Z", playtimeSec: 100 }],
-      guilds: [{ id: "g1", name: "Guild", adminUid: "u1", memberCount: 1, members: [{ uid: "u1", name: "Hunter" }], bases: [{ id: "b1", location: { x: 0, y: 0 }, level: 1 }] }],
+      players: [{ uid: "u1", name: "Player One", online: true, level: 40, guildId: "g1", guildName: "Guild", firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-15T00:00:00Z", playtimeSec: 100 }],
+      guilds: [{ id: "g1", name: "Guild", adminUid: "u1", memberCount: 1, members: [{ uid: "u1", name: "Player One" }], bases: [{ id: "b1", location: { x: 0, y: 0 }, level: 1 }] }],
       pals: [],
-      liveWorkers: { state: "ready", capturedAt: new Date().toISOString(), workers: [{ instanceId: "p1", characterId: "Anubis", displayName: "Anubis", isBoss: false, level: 35, hpPercent: 18, active: true, activity: "working", baseId: "b1", ownerUid: "u1", ownerName: "Hunter", ownerSource: "save" }] },
+      liveWorkers: { state: "ready", capturedAt: new Date().toISOString(), workers: [{ instanceId: "p1", characterId: "Anubis", displayName: "Anubis", isBoss: false, level: 35, hpPercent: 18, active: true, activity: "working", baseId: "b1", ownerUid: "u1", ownerName: "Player One", ownerSource: "save" }] },
     };
     const ctx = { config: { serverLabel: "Example Pals" }, snapshots: { get: vi.fn().mockResolvedValue(snapshot) } };
     const result = await answerQuestion({ complete } as unknown as OpenRouterClient, ctx as never, "What is happening at my base?", undefined, { playerUid: "u1" });

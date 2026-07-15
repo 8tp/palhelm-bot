@@ -15,8 +15,8 @@ const event = (kind: PanelEvent["kind"], message: string): PanelEvent => ({
 
 describe("public history projection", () => {
   it("allows only structurally known public player, backup, and system messages", () => {
-    expect(safePublicEventMessage(event("join", "Hunter joined"), false)).toBe("Hunter joined");
-    expect(safePublicEventMessage(event("leave", "Hunter left"), false)).toBe("Hunter left");
+    expect(safePublicEventMessage(event("join", "Player One joined"), false)).toBe("Player One joined");
+    expect(safePublicEventMessage(event("leave", "Player One left"), false)).toBe("Player One left");
     expect(safePublicEventMessage(event("backup", "/private/path/world.tar.zst"), false)).toBe("Backup completed");
     expect(safePublicEventMessage(event("system", "Palworld REST API is reachable"), false)).toBe("Palworld REST API is reachable");
   });

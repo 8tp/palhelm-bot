@@ -36,7 +36,7 @@ describe("milestone cards", () => {
     const output = await renderMilestoneCard({
       kind: "level",
       playerUid: "u1",
-      playerName: "Hunter",
+      playerName: "Player One",
       value: 40,
     }, assets as never, "Valley Squad");
     expect((await sharp(output).metadata()).format).toBe("jpeg");

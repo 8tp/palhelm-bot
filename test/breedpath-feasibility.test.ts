@@ -35,14 +35,14 @@ describe("breeding path feasibility notes", () => {
 
 describe("breeding path roster scope", () => {
   const players = [
-    { uid: "hunter", name: "Hunter", online: true, level: 40, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
+    { uid: "player-one", name: "Player One", online: true, level: 40, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
     { uid: "luna", name: "Luna", online: false, level: 35, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
   ];
 
   it("defaults to the caller's linked player and never silently falls back to the server", () => {
-    expect(selectBreedpathScope(players, null, null, "hunter")).toMatchObject({
+    expect(selectBreedpathScope(players, null, null, "player-one")).toMatchObject({
       kind: "player",
-      player: { uid: "hunter" },
+      player: { uid: "player-one" },
     });
     expect(selectBreedpathScope(players, null, null, null)).toEqual({ kind: "unlinked" });
     expect(selectBreedpathScope(players, null, null, "missing")).toEqual({ kind: "linked_player_missing" });

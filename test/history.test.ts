@@ -112,8 +112,8 @@ describe("ObservationTracker", () => {
   it("does not call a transferred known rare Pal a first find", async () => {
     const history = await tracker();
     await history.observe(snapshot("2026-07-10T10:00:00.000Z", {
-      players: [player(), player({ uid: "u2", name: "Hunter" })],
-      pals: [pal({ ownerUid: "u2", ownerName: "Hunter", isLucky: true })],
+      players: [player(), player({ uid: "u2", name: "Player Two" })],
+      pals: [pal({ ownerUid: "u2", ownerName: "Player Two", isLucky: true })],
     }));
     const events = await history.observe(snapshot("2026-07-10T10:05:00.000Z", {
       pals: [pal({ ownerUid: "u1", ownerName: "Luna", isLucky: true })],
@@ -387,7 +387,7 @@ describe("ObservationTracker", () => {
     dirs.push(dir);
     const path = join(dir, "state.json");
     const first = new ObservationTracker(path, () => new Date("2026-07-10T12:00:00.000Z"));
-    const initialPlayers = [player({ level: 31 }), player({ uid: "u2", name: "Hunter", level: 30, playtimeSec: 10 * 3_600 })];
+    const initialPlayers = [player({ level: 31 }), player({ uid: "u2", name: "Player Two", level: 30, playtimeSec: 10 * 3_600 })];
     await first.observe(snapshot("2026-07-10T10:00:00.000Z", { players: initialPlayers }));
 
     // The incumbent improving silently must raise the persisted record value.
@@ -395,14 +395,14 @@ describe("ObservationTracker", () => {
       players: [player({ level: 33 }), initialPlayers[1]!],
     }))).filter((event) => event.kind === "record")).toEqual([]);
     expect((await first.observe(snapshot("2026-07-10T10:10:00.000Z", {
-      players: [player({ level: 33 }), player({ uid: "u2", name: "Hunter", level: 32, playtimeSec: 10 * 3_600 })],
+      players: [player({ level: 33 }), player({ uid: "u2", name: "Player Two", level: 32, playtimeSec: 10 * 3_600 })],
     }))).filter((event) => event.kind === "record")).toEqual([]);
 
     const changes = (await first.observe(snapshot("2026-07-10T10:15:00.000Z", {
-      players: [player({ level: 33 }), player({ uid: "u2", name: "Hunter", level: 34, playtimeSec: 10 * 3_600 })],
+      players: [player({ level: 33 }), player({ uid: "u2", name: "Player Two", level: 34, playtimeSec: 10 * 3_600 })],
     }))).filter((event) => event.kind === "record");
     expect(changes).toEqual([expect.objectContaining({
-      playerName: "Hunter",
+      playerName: "Player Two",
       previousPlayerName: "Luna",
       recordLabel: "highest player level",
       recordDetail: "Lv 34",
@@ -410,15 +410,15 @@ describe("ObservationTracker", () => {
       trackingStartedAt: "2026-07-10T12:00:00.000Z",
       observedAt: "2026-07-10T10:15:00.000Z",
     })]);
-    expect(first.recordHistory()).toEqual([expect.objectContaining({ playerName: "Hunter", previousPlayerName: "Luna" })]);
+    expect(first.recordHistory()).toEqual([expect.objectContaining({ playerName: "Player Two", previousPlayerName: "Luna" })]);
     const recap = await first.prepareDigest("2026-07-10", snapshot("2026-07-10T10:15:00.000Z"));
-    expect(recap?.digest.milestones).toContain("Hunter passed Luna for highest player level (Lv 34) · observed record");
+    expect(recap?.digest.milestones).toContain("Player Two passed Luna for highest player level (Lv 34) · observed record");
     await first.ackDigest("2026-07-10");
     await first.ackMilestoneBatch("2026-07-10T10:15:00.000Z");
 
     const restarted = new ObservationTracker(path, () => new Date("2026-07-10T12:20:00.000Z"));
     const repeated = await restarted.observe(snapshot("2026-07-10T10:20:00.000Z", {
-      players: [player({ level: 33 }), player({ uid: "u2", name: "Hunter", level: 34, playtimeSec: 10 * 3_600 })],
+      players: [player({ level: 33 }), player({ uid: "u2", name: "Player Two", level: 34, playtimeSec: 10 * 3_600 })],
     }));
     expect(repeated.filter((event) => event.kind === "record")).toEqual([]);
     expect(restarted.recordHistory()).toHaveLength(1);

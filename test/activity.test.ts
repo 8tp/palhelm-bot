@@ -11,7 +11,7 @@ afterEach(async () => Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursiv
 function snapshot(at: string, online: boolean): WorldSnapshot {
   return {
     capturedAt: at, lastParseAt: at, formatDrift: false,
-    players: [{ uid: "u", name: "Hunter", online, level: 1, guildId: null, guildName: null, firstSeenAt: at, lastSeenAt: at, playtimeSec: 0 }],
+    players: [{ uid: "u", name: "Player One", online, level: 1, guildId: null, guildName: null, firstSeenAt: at, lastSeenAt: at, playtimeSec: 0 }],
     pals: [], guilds: [], metricsCurrent: null, server: { name: "s", description: "", version: "1", state: "running", uptimeSec: 1 },
   };
 }
@@ -28,7 +28,7 @@ describe("ActivityTracker", () => {
     const restarted = new ActivityTracker(path);
     await expect(restarted.observe(snapshot("2026-07-11T21:55:00Z", true), start + 9 * 3_600_000 + 55 * 60_000)).resolves.toEqual([]);
     await expect(restarted.observe(snapshot("2026-07-11T22:00:00Z", false), start + 10 * 3_600_000))
-      .resolves.toMatchObject([{ kind: "leave", name: "Hunter", durationSec: 36_000 }]);
+      .resolves.toMatchObject([{ kind: "leave", name: "Player One", durationSec: 36_000 }]);
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ version: 1, onlineSince: {} });
   });
 
@@ -50,7 +50,7 @@ describe("ActivityTracker", () => {
     const seeds = activitySeedsFromEvents([
       { at: "2026-07-11T11:00:00Z", kind: "join", message: "old joined", meta: { uid: "U" } },
       { at: "2026-07-11T11:30:00Z", kind: "leave", message: "old left", meta: { uid: "u" } },
-      { at: "2026-07-11T12:00:00Z", kind: "join", message: "Hunter joined", meta: { uid: "U" } },
+      { at: "2026-07-11T12:00:00Z", kind: "join", message: "Player One joined", meta: { uid: "U" } },
     ]);
     const tracker = new ActivityTracker(path);
     await tracker.observe(snapshot("2026-07-11T21:55:00Z", true), start + 9 * 3_600_000 + 55 * 60_000, seeds);
