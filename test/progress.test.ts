@@ -17,7 +17,7 @@ function harness(player: Record<string, unknown>) {
 describe("/progress", () => {
   it("renders authoritative lifetime counters and distinguishes Paldeck unlocks", async () => {
     const h = harness({
-      uid: "player-1", name: "Hunter", level: 42, playtimeSec: 7_200,
+      uid: "player-1", name: "Player One", level: 42, playtimeSec: 7_200,
       captureTotal: 123, uniquePalsCaptured: 37, paldeckUnlocked: 51,
     });
     await progressCommand.execute(h.interaction as never, h.ctx as never);
@@ -31,7 +31,7 @@ describe("/progress", () => {
   });
 
   it("says unavailable instead of inventing zero for an older panel", async () => {
-    const h = harness({ uid: "player-1", name: "Hunter", level: 42, playtimeSec: 0 });
+    const h = harness({ uid: "player-1", name: "Player One", level: 42, playtimeSec: 0 });
     await progressCommand.execute(h.interaction as never, h.ctx as never);
     const embed = h.editReply.mock.calls[0]![0].embeds[0].toJSON();
     expect(embed.description).toContain("unavailable");

@@ -7,6 +7,7 @@ import type { BreedingStep } from "../knowledge/paldeck.js";
 import type { RosterPal } from "../types.js";
 import type { PlayerSummary } from "../types.js";
 import { findOwnedBreedingMatch, genderCounts } from "../breeding/owned.js";
+import { humanizeInternalName } from "../pals/names.js";
 
 const MAX_STEPS = 14;
 
@@ -27,6 +28,12 @@ export const breedpathCommand: Command = {
     )
     .addStringOption((option) =>
       option.setName("player").setDescription("Optional specific player override").setRequired(false).setAutocomplete(true),
+    )
+    .addStringOption((option) =>
+      option.setName("passive").setDescription("Optional desired passive/trait to preserve").setRequired(false).setMaxLength(100),
+    )
+    .addBooleanOption((option) =>
+      option.setName("track").setDescription("Save this plan as a personal /goal").setRequired(false),
     ),
 
   async autocomplete(interaction, ctx) {
@@ -66,6 +73,8 @@ export const breedpathCommand: Command = {
     const targetQuery = interaction.options.getString("target", true);
     const requestedScope = interaction.options.getString("scope");
     const playerQuery = interaction.options.getString("player");
+    const passiveQuery = interaction.options.getString("passive");
+    const track = interaction.options.getBoolean("track") ?? false;
     const snapshot = await ctx.snapshots.get();
     const guildId = interaction.guildId ?? ctx.config.guildId;
     const linkedPlayerUid = !playerQuery && requestedScope !== "server"
@@ -131,9 +140,32 @@ export const breedpathCommand: Command = {
     });
     if (path.steps.length > shown.length) lines.push(`…and ${path.steps.length - shown.length} more steps`);
     const feasibility = breedingFeasibilityNotes(path.steps, ownedPals);
+    const passive = passivePlanNote(passiveQuery, [...ownedPals.values()].flat());
+    let goalLine = "";
+    if (track) {
+      try {
+        const goal = await ctx.goals.add({
+          createdBy: interaction.user.id,
+          createdByName: interaction.user.globalName ?? interaction.user.username,
+          speciesId: path.target.internalId,
+          speciesName: path.target.name,
+          variant: "any",
+          snapshot,
+          ...(player ? { ownerUid: player.uid } : {}),
+          breedingPlan: {
+            ...(passiveQuery?.trim() ? { passive: passiveQuery.trim() } : {}),
+            steps: path.steps.map((step) => ({ parent1: step.parent1.name, parent2: step.parent2.name, child: step.child.name })),
+          },
+        });
+        goalLine = `\n\n🎯 Saved as goal **#${goal.id}**${player ? ` for ${player.name}'s roster` : ""}. Use \`/goal list\` to resume it.`;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        goalLine = `\n\n⚠️ Plan not saved: ${code === "duplicate_goal" ? "that target is already in your goals" : code === "user_goal_limit" ? "you already have 10 active goals" : "the goal could not be saved safely"}.`;
+      }
+    }
 
     embed.setDescription(truncate(
-      `Shortest chain from ${scope} — **${path.steps.length} breeding step${path.steps.length === 1 ? "" : "s"}**.\n✅ owned now · 🥚 bred in an earlier step\n\n${lines.join("\n")}${feasibility.length ? `\n\n⚠️ **Feasibility notes**\n${feasibility.join("\n")}` : ""}`,
+      `Shortest chain from ${scope} — **${path.steps.length} breeding step${path.steps.length === 1 ? "" : "s"}**.\n✅ owned now · 🥚 bred in an earlier step\n\n${lines.join("\n")}${passive ? `\n\n🧬 **Desired passive**\n${passive}` : ""}${feasibility.length ? `\n\n⚠️ **Feasibility notes**\n${feasibility.join("\n")}` : ""}${goalLine}`,
       4096,
     ));
     embed.setFooter({ text: truncate(`${metadataLabel(ctx.knowledge)} · observed parent genders checked; intermediate offspring gender and passive inheritance are not guaranteed`, 2048) });
@@ -165,6 +197,19 @@ export function selectBreedpathScope(
   if (!linkedPlayerUid) return { kind: "unlinked" };
   const player = players.find((item) => item.uid === linkedPlayerUid);
   return player ? { kind: "player", player } : { kind: "linked_player_missing" };
+}
+
+export function passivePlanNote(query: string | null, pals: readonly RosterPal[]): string | null {
+  const needle = query?.trim().toLocaleLowerCase("en-US");
+  if (!needle) return null;
+  const carriers = pals.filter((pal) => (pal.passiveSkillIds ?? []).some((id) =>
+    id.toLocaleLowerCase("en-US").includes(needle) || humanizeInternalName(id).toLocaleLowerCase("en-US").includes(needle)
+  ));
+  if (carriers.length === 0) {
+    return `No observed scoped Pal carries **${truncate(query!.trim(), 80)}**. This species chain does not establish passive inheritance.`;
+  }
+  const shown = carriers.slice(0, 6).map((pal) => `${pal.displayName} ${pal.gender === "male" ? "♂" : pal.gender === "female" ? "♀" : "?"}`).join(" · ");
+  return `${carriers.length} observed carrier${carriers.length === 1 ? "" : "s"}: ${truncate(shown, 500)}${carriers.length > 6 ? ` · +${carriers.length - 6} more` : ""}. Prefer routes using a carrier, but egg inheritance is chance-based and not guaranteed.`;
 }
 
 export function breedingFeasibilityNotes(

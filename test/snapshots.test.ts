@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IntegrationClient } from "../src/palhelm/integration.js";
+import { ApiError } from "../src/palhelm/integration.js";
 import { SnapshotService } from "../src/snapshots/service.js";
 
 function fakeClient(overrides: Record<string, unknown> = {}) {
@@ -24,6 +25,18 @@ function fakeClient(overrides: Record<string, unknown> = {}) {
       data: { name: "Test Server", state: "running" },
       formatDrift: false,
     })),
+    worldSummary: vi.fn(async () => ({
+      data: {
+        state: "ready", capturedAt: "2026-07-10T10:01:00.000Z", lastAttemptAt: "2026-07-10T10:01:00.000Z",
+        fps: 59, fpsAvg: 59,
+        counts: { players: 1, partyPals: 1, basePals: 2, wildPals: 0, npcs: 0, palBoxes: 1, unknown: 0 },
+      },
+    })),
+    worldWorkers: vi.fn(async () => ({
+      data: {
+        state: "ready", capturedAt: "2026-07-10T10:01:00.000Z", workers: [],
+      },
+    })),
     ...overrides,
   } as unknown as IntegrationClient;
 }
@@ -41,6 +54,8 @@ describe("SnapshotService", () => {
     expect(snapshot.guilds[0]).toMatchObject({ id: "g1" });
     expect(snapshot.metricsCurrent).toMatchObject({ fps: 60 });
     expect(snapshot.server).toMatchObject({ name: "Test Server" });
+    expect(snapshot.worldSummary).toMatchObject({ state: "ready", counts: { basePals: 2 } });
+    expect(snapshot.liveWorkers).toMatchObject({ state: "ready", workers: [] });
     expect(snapshot.formatDrift).toBe(true);
     expect(snapshot.lastParseAt).toBe("2026-07-10T10:00:00.000Z");
     expect(service.peek()).toBe(snapshot);
@@ -145,11 +160,74 @@ describe("SnapshotService", () => {
     const service = new SnapshotService(fakeClient({
       metricsCurrent: unavailable,
       server: unavailable,
+      worldSummary: unavailable,
+      worldWorkers: unavailable,
     }));
 
     const snapshot = await service.get();
 
     expect(snapshot.metricsCurrent).toBeNull();
     expect(snapshot.server).toBeNull();
+    expect(snapshot.worldSummary).toBeNull();
+    expect(snapshot.liveWorkers).toBeNull();
+  });
+
+  it("marks a transient last-good live sample stale and expires it by capture time", async () => {
+    let now = Date.parse("2026-07-10T10:01:00.000Z");
+    const worldSummary = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          state: "ready", capturedAt: new Date(now).toISOString(), lastAttemptAt: new Date(now).toISOString(),
+          fps: 60, fpsAvg: 60,
+          counts: { players: 1, partyPals: 0, basePals: 1, wildPals: 0, npcs: 0, palBoxes: 1, unknown: 0 },
+        },
+      })
+      .mockRejectedValue(new Error("temporary live-data outage"));
+    const service = new SnapshotService(fakeClient({ worldSummary }), {
+      maxAgeMs: 1,
+      liveDataMaxAgeMs: 60_000,
+      now: () => now,
+    });
+
+    expect((await service.get()).worldSummary?.state).toBe("ready");
+    now += 2;
+    expect((await service.get()).worldSummary?.state).toBe("stale");
+    now += 60_000;
+    expect((await service.get()).worldSummary).toBeNull();
+  });
+
+  it("clears last-good live data immediately on a terminal API failure", async () => {
+    let now = Date.parse("2026-07-10T10:01:00.000Z");
+    const worldWorkers = vi.fn()
+      .mockResolvedValueOnce({
+        data: { state: "ready", capturedAt: new Date(now).toISOString(), workers: [] },
+      })
+      .mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
+    const service = new SnapshotService(fakeClient({ worldWorkers }), {
+      maxAgeMs: 1,
+      liveDataMaxAgeMs: 60_000,
+      now: () => now,
+    });
+
+    expect((await service.get()).liveWorkers?.state).toBe("ready");
+    now += 2;
+    expect((await service.get()).liveWorkers).toBeNull();
+  });
+
+  it("rejects an already-expired live sample even when the request succeeds", async () => {
+    const now = Date.parse("2026-07-10T10:01:00.000Z");
+    const worldWorkers = vi.fn(async () => ({
+      data: {
+        state: "ready",
+        capturedAt: new Date(now - 60_001).toISOString(),
+        workers: [],
+      },
+    }));
+    const service = new SnapshotService(fakeClient({ worldWorkers }), {
+      liveDataMaxAgeMs: 60_000,
+      now: () => now,
+    });
+
+    expect((await service.get()).liveWorkers).toBeNull();
   });
 });

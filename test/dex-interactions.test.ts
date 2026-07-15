@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dexControlError, dexSectionFields } from "../src/commands/dex.js";
+import { dexControlError, dexFieldGuideFields, dexLocationFields, dexSectionFields } from "../src/commands/dex.js";
 import type { PalKnowledge } from "../src/knowledge/paldeck.js";
 
 const pal: PalKnowledge = {
@@ -39,6 +39,24 @@ describe("dex interactive sections", () => {
     expect(dexSectionFields(pal, "work")[0]?.value).toBe("Handiwork 4 · Mining 3");
     expect(dexSectionFields(pal, "combat").find((field) => field.name === "Active-skill learnset")?.value).toContain("Stone Blast");
     expect(dexSectionFields(pal, "breeding").find((field) => field.name === "Dataset coverage")).toBeDefined();
+    expect(dexSectionFields(pal, "field")[0]?.value).toContain("source links");
+  });
+
+  it("renders web-backed drops and locations with deterministic source links", () => {
+    const fields = dexFieldGuideFields({
+      query: "Anubis drops location",
+      answers: [],
+      cacheStatus: "fresh_cache",
+      results: [{ title: "Anubis", url: "https://palworld.wiki.gg/wiki/Anubis", content: "Habitat and possible drops.", engine: "test" }],
+    });
+    expect(fields[0]?.value).toContain("[Anubis](https://palworld.wiki.gg/wiki/Anubis)");
+    expect(fields[1]?.value).toContain("Cached source results");
+  });
+
+  it("labels cached wiki coordinates separately from raw server world positions", () => {
+    const fields = dexLocationFields([{ locationName: "Twilight Dunes", entityName: "Anubis", entityType: "pal", variantType: "Alpha", level: 47, coords: { x: -130, y: -96 }, note: "" }]);
+    expect(fields[0]?.value).toContain("(-130, -96)");
+    expect(fields[1]?.value).toContain("not raw server world positions");
   });
 
   it("accepts only the requester using the live control and a known section", () => {

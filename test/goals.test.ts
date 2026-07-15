@@ -89,4 +89,21 @@ describe("GoalService", () => {
     await expect(goals.observe(snapshot("2026-07-11T12:05:00Z", [boss]))).resolves.toEqual([]);
     expect(goals.list()).toHaveLength(1);
   });
+
+  it("persists a personal breeding plan and only completes for its scoped owner", async () => {
+    const { goals, path } = await service();
+    const empty = snapshot("2026-07-11T12:00:00Z");
+    await goals.add({
+      createdBy: "discord-1", createdByName: "Tester", speciesId: "Anubis", speciesName: "Anubis",
+      variant: "any", snapshot: empty, ownerUid: "owner-a",
+      breedingPlan: { passive: "Artisan", steps: [{ parent1: "A", parent2: "B", child: "Anubis" }] },
+    });
+    const restarted = new GoalService(path);
+    await restarted.init();
+    expect(restarted.list("discord-1")[0]).toMatchObject({ ownerUid: "owner-a", breedingPlan: { passive: "Artisan" } });
+
+    const pal = { instanceId: "new", characterId: "Anubis", displayName: "Anubis", level: 1, isAlpha: false, isLucky: false, ownerUid: "friend", ownerName: "Friend" };
+    await expect(restarted.observe(snapshot("2026-07-11T12:05:00Z", [pal]))).resolves.toEqual([]);
+    await expect(restarted.observe(snapshot("2026-07-11T12:10:00Z", [{ ...pal, instanceId: "mine", ownerUid: "owner-a", ownerName: "Owner A" }]))).resolves.toHaveLength(1);
+  });
 });

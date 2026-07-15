@@ -14,6 +14,12 @@ export interface PalGoal {
   variant: GoalVariant;
   createdAt: string;
   baselineInstances: string[];
+  /** Optional player scope for personal breeding plans. */
+  ownerUid?: string;
+  breedingPlan?: {
+    passive?: string;
+    steps: Array<{ parent1: string; parent2: string; child: string }>;
+  };
 }
 
 export interface GoalCompletion {
@@ -72,6 +78,8 @@ export class GoalService {
     speciesName: string;
     variant: GoalVariant;
     snapshot: WorldSnapshot;
+    ownerUid?: string;
+    breedingPlan?: PalGoal["breedingPlan"];
   }): Promise<PalGoal> {
     return this.withLock(async () => {
       const state = this.requireState();
@@ -88,6 +96,7 @@ export class GoalService {
       if (duplicate) throw new Error("duplicate_goal");
       const already = input.snapshot.pals.filter((pal) =>
         baseCharacterId(pal.characterId).toLowerCase() === speciesId.toLowerCase() &&
+        (!input.ownerUid || pal.ownerUid === input.ownerUid) &&
         matchesVariant(pal, input.variant),
       );
       if (already.length > 0) throw new Error("already_observed");
@@ -101,8 +110,10 @@ export class GoalService {
         variant: input.variant,
         createdAt: this.now().toISOString(),
         baselineInstances: input.snapshot.pals
-          .filter((pal) => baseCharacterId(pal.characterId).toLowerCase() === speciesId.toLowerCase())
+          .filter((pal) => (!input.ownerUid || pal.ownerUid === input.ownerUid) && baseCharacterId(pal.characterId).toLowerCase() === speciesId.toLowerCase())
           .map((pal) => pal.instanceId),
+        ...(input.ownerUid ? { ownerUid: input.ownerUid } : {}),
+        ...(input.breedingPlan ? { breedingPlan: structuredClone(input.breedingPlan) } : {}),
       };
       state.active.push(goal);
       await this.persist();
@@ -133,6 +144,7 @@ export class GoalService {
         const pal = snapshot.pals.find((candidate) =>
           !baseline.has(candidate.instanceId) &&
           !previouslyObserved.has(candidate.instanceId) &&
+          (!goal.ownerUid || candidate.ownerUid === goal.ownerUid) &&
           baseCharacterId(candidate.characterId).toLowerCase() === goal.speciesId.toLowerCase() &&
           matchesVariant(candidate, goal.variant),
         );

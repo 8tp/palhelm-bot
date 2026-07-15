@@ -92,7 +92,9 @@ export const historyCommand: Command = {
 
     let events: PanelEvent[];
     try {
-      events = await ctx.session.recentEvents(FETCH);
+      // The public Integration contract already redacts this feed for Discord.
+      // Do not fall back to admin-session event text in a public command.
+      events = (await ctx.integration.events(FETCH)).data;
     } catch {
       await interaction.editReply({
         embeds: [baseEmbed("History unavailable").setDescription("Couldn't reach the panel to load recent events.")],

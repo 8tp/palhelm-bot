@@ -5,7 +5,7 @@
 // Both return null on 404 — pyramids/icons are operator-fetched and may be
 // absent; callers must degrade to text-only output.
 import type { SessionClient, BinaryAsset } from "./session.js";
-import { baseCharacterId } from "../pals/presentation.js";
+import { palIconCandidateIds } from "../pals/presentation.js";
 
 const MAX_ENTRIES = 500;
 const NEGATIVE_TTL_MS = 5 * 60_000;
@@ -34,10 +34,11 @@ export class AssetCache {
   }
 
   async palIcon(characterId: string): Promise<BinaryAsset | null> {
-    // Save records prefix Alpha/boss instances with BOSS_, while the icon
-    // dataset is keyed by the underlying canonical CharacterID.
-    const canonicalId = baseCharacterId(characterId);
-    return this.fetch(`/api/v1/paldeck/icon/${encodeURIComponent(canonicalId)}`);
+    for (const candidate of palIconCandidateIds(characterId)) {
+      const asset = await this.fetch(`/api/v1/paldeck/icon/${encodeURIComponent(candidate)}`);
+      if (asset) return asset;
+    }
+    return null;
   }
 
   /** Steam avatar proxied and cached by the panel; null for private/non-Steam identities. */

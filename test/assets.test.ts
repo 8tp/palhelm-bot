@@ -14,7 +14,22 @@ describe("binary asset cache", () => {
     await cache.palIcon("Gorilla_Ground");
 
     expect(binary).toHaveBeenCalledTimes(1);
-    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/Gorilla_Ground");
+    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/gorilla_ground");
+  });
+
+  it("uses base art for cosmetic/tower variants and preserves Hawk's exact portrait", async () => {
+    const binary = vi.fn(async (path: string) => path.includes("boss_hunter_rifle")
+      ? { buffer: Buffer.from("hawk"), contentType: "image/png" }
+      : { buffer: Buffer.from("pal"), contentType: "image/webp" });
+    const cache = new AssetCache({ binary } as never);
+
+    await cache.palIcon("PlantSlime_Flower");
+    await cache.palIcon("GrassPanda_Electric_Tower");
+    await cache.palIcon("BOSS_Hunter_Rifle");
+
+    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/plantslime");
+    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/grasspanda_electric");
+    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/boss_hunter_rifle");
   });
 
   it("retries remembered 404s after a bounded negative-cache TTL", async () => {

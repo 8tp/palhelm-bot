@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breedingFeasibilityNotes, selectBreedpathScope } from "../src/commands/breedpath.js";
+import { breedingFeasibilityNotes, passivePlanNote, selectBreedpathScope } from "../src/commands/breedpath.js";
 import type { BreedingStep, PalKnowledge } from "../src/knowledge/paldeck.js";
 
 const pal = (internalId: string): PalKnowledge => ({
@@ -35,14 +35,14 @@ describe("breeding path feasibility notes", () => {
 
 describe("breeding path roster scope", () => {
   const players = [
-    { uid: "hunter", name: "Hunter", online: true, level: 40, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
+    { uid: "player-one", name: "Player One", online: true, level: 40, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
     { uid: "luna", name: "Luna", online: false, level: 35, guildId: null, guildName: null, firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-12T00:00:00Z", playtimeSec: 100 },
   ];
 
   it("defaults to the caller's linked player and never silently falls back to the server", () => {
-    expect(selectBreedpathScope(players, null, null, "hunter")).toMatchObject({
+    expect(selectBreedpathScope(players, null, null, "player-one")).toMatchObject({
       kind: "player",
-      player: { uid: "hunter" },
+      player: { uid: "player-one" },
     });
     expect(selectBreedpathScope(players, null, null, null)).toEqual({ kind: "unlinked" });
     expect(selectBreedpathScope(players, null, null, "missing")).toEqual({ kind: "linked_player_missing" });
@@ -54,5 +54,18 @@ describe("breeding path roster scope", () => {
       kind: "player",
       player: { uid: "luna" },
     });
+  });
+});
+
+describe("breeding passive target", () => {
+  it("finds observed carriers but never guarantees inheritance", () => {
+    const carrier = {
+      instanceId: "a", characterId: "Anubis", displayName: "Anubis", level: 10,
+      isAlpha: false, isLucky: false, ownerUid: "u", ownerName: "Player", gender: "male" as const,
+      passiveSkillIds: ["PassiveSkill_WorkSpeed_Up_3"],
+    };
+    expect(passivePlanNote("work speed", [carrier])).toContain("1 observed carrier");
+    expect(passivePlanNote("work speed", [carrier])).toContain("not guaranteed");
+    expect(passivePlanNote("legend", [carrier])).toContain("No observed scoped Pal");
   });
 });

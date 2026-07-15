@@ -16,6 +16,7 @@ import type { PalKnowledgeService } from "../knowledge/paldeck.js";
 import type { GoalService } from "../goals/service.js";
 import type { PlayerLinkService } from "../identity/playerLinks.js";
 import type { KnowledgeCorpus } from "../knowledge/corpus.js";
+import type { PalLocationService } from "../knowledge/locations.js";
 
 export interface BotContext {
   config: BotConfig;
@@ -26,6 +27,7 @@ export interface BotContext {
   knowledge: PalKnowledgeService;
   /** Optional disk-backed general Palworld field guide; empty when not yet ingested. */
   generalKnowledge: KnowledgeCorpus;
+  locations: PalLocationService;
   goals: GoalService;
   playerLinks: PlayerLinkService;
   openRouter: OpenRouterClient | null;

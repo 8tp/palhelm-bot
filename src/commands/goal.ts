@@ -68,7 +68,7 @@ export const goalCommand: Command = {
     if (action === "list") {
       const goals = ctx.goals.list(interaction.user.id);
       const lines = goals.map((goal) =>
-        `**#${goal.id}** ${goal.speciesName} · ${VARIANT_LABELS[goal.variant]} · since <t:${Math.floor(Date.parse(goal.createdAt) / 1_000)}:R>`,
+        `**#${goal.id}** ${goal.speciesName} · ${VARIANT_LABELS[goal.variant]}${goal.breedingPlan ? ` · 🧬 ${goal.breedingPlan.steps.length} step${goal.breedingPlan.steps.length === 1 ? "" : "s"}${goal.breedingPlan.passive ? ` · ${truncate(goal.breedingPlan.passive, 50)}` : ""}` : ""} · since <t:${Math.floor(Date.parse(goal.createdAt) / 1_000)}:R>`,
       );
       await interaction.editReply({
         embeds: [baseEmbed("🎯 Your Pal Goals").setDescription(

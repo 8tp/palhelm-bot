@@ -1,8 +1,13 @@
 {
   "name": "palhelm-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/8tp/palhelm-bot.git"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -14,8 +19,12 @@
     "smoke:registry": "node --import tsx test/smoke-registry.ts",
     "smoke:public-api": "node --import tsx scripts/smoke-public-api.ts",
     "knowledge:ingest": "tsx scripts/ingest-mediawiki.ts",
+    "knowledge:locations": "tsx scripts/import-wiki-locations.ts",
     "knowledge:evaluate": "tsx scripts/evaluate-knowledge.ts",
     "models:compare": "tsx scripts/compare-models.ts",
+    "models:compare-live": "tsx scripts/compare-models-live.ts",
+    "icons:audit": "node --import tsx scripts/audit-pal-icons.ts",
+    "icons:extras": "node --import tsx scripts/import-extra-icons.ts",
     "test": "vitest run"
   },
   "dependencies": {

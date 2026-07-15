@@ -9,7 +9,7 @@ import type { WorldSnapshot } from "../snapshots/service.js";
 import type { PlayerSummary, RosterPal } from "../types.js";
 import type { WebSearchClient } from "./websearch.js";
 import { baseCharacterId, isBossVariant, palOwnerLabel } from "../pals/presentation.js";
-import { GENERAL_KNOWLEDGE_LICENSE, GENERAL_KNOWLEDGE_VERSION, searchGeneralKnowledge } from "../knowledge/general.js";
+import { GENERAL_KNOWLEDGE_VERSION, searchGeneralKnowledge } from "../knowledge/general.js";
 import { humanizeInternalName } from "../pals/names.js";
 import { findOwnedBreedingMatch, genderCounts } from "../breeding/owned.js";
 
@@ -61,6 +61,30 @@ export const aiToolDefinitions = [
       name: "get_server_status",
       description: "Get the current public Palworld server and telemetry status.",
       parameters: noArgs,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_live_world_summary",
+      description: "Get the cached aggregate-only Palworld Game Data API status, freshness, FPS, and counts of active players, party/base/wild Pals, NPCs, and PalBoxes. It contains no actor identities or locations.",
+      parameters: noArgs,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_live_base_workers",
+      description: "Get exact save-linked live base workers and their current activity/HP from the cached Game Data API. Use for what Pals are doing at a base, idle or incapacitated workers, and current base health. A player filter selects that player's guild bases; use self for the requester.",
+      parameters: {
+        type: "object",
+        properties: {
+          player: requiredString("Optional exact player name, UID, or self; selects that player's guild bases."),
+          base: requiredString("Optional 1-based base number or exact base ID/prefix."),
+          attentionOnly: { type: "boolean", description: "Return only idle, inactive, incapacitated, or below-25%-HP workers." },
+        },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -167,6 +191,39 @@ export const aiToolDefinitions = [
         type: "object",
         properties: { pal: requiredString("Exact Pal name or internal character ID.") },
         required: ["pal"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_pal_locations",
+      description: "Get locally cached, attributed Palworld Wiki encounter habitats and exact map coordinates for one Pal. Coordinates are in-game map coordinates, not live player/world positions.",
+      parameters: {
+        type: "object",
+        properties: { pal: requiredString("Exact Pal display name.") },
+        required: ["pal"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compare_pal_movement",
+      description: "Compare exact version-pinned movement stats for up to 20 named Pals in one call: walk, run, ride sprint, transport, and stamina. These raw stats do not by themselves prove that a Pal is rideable.",
+      parameters: {
+        type: "object",
+        properties: {
+          pals: {
+            type: "string",
+            description: "Pal names or internal IDs separated by commas, pipes, or newlines.",
+            minLength: 1,
+            maxLength: 500,
+          },
+        },
+        required: ["pals"],
         additionalProperties: false,
       },
     },
@@ -299,6 +356,7 @@ export const aiToolDefinitions = [
         properties: {
           child: requiredString("Exact desired child Pal name or internal character ID."),
           player: requiredString("Optional exact player name, UID, or self for the requester's linked player; otherwise use all current server Pals."),
+          passive: requiredString("Optional desired passive/trait name. Rankings prefer observed owned parent carriers and report inheritance uncertainty."),
         },
         required: ["child"],
         additionalProperties: false,
@@ -352,11 +410,24 @@ export async function executeAiTool(
     return matches.length > 0
       ? { ok: true, data: {
         version: corpusMatches.length > 0 ? "local-section-corpus-v1" : GENERAL_KNOWLEDGE_VERSION,
-        license: corpusMatches.length > 0 ? "per-entry; see license and source URL" : GENERAL_KNOWLEDGE_LICENSE,
+        license: "per-entry; see license and source URL",
         retrieval: corpusMatches.length > 0 ? "local_full_text" : "built_in",
         entries: matches,
       } as unknown as JsonValue }
       : failure("not_found", "The pinned general-knowledge corpus has no matching entry; use Palworld web search.");
+  }
+  if (name === "get_pal_locations") {
+    const status = ctx.locations?.status();
+    if (!status?.available) return failure("location_data_unavailable", "The attributed location cache is not installed; use Palworld web search.");
+    const pal = validation.args.pal as string;
+    const rows = ctx.locations.search(pal, 30);
+    return rows.length > 0 ? { ok: true, data: {
+      pal,
+      source: { url: status.sourceUrl, license: status.license, cachedAt: status.generatedAt },
+      coordinateBoundary: "Coordinates are in-game map coordinates from the wiki, not raw server world coordinates or live player positions.",
+      habitats: [...new Set(rows.map((row) => row.locationName))],
+      encounters: rows.map((row) => ({ location: row.locationName, variant: row.variantType || null, level: row.level, coordinates: row.coords, note: row.note || null })),
+    } as unknown as JsonValue } : failure("not_found", "No cached wiki encounter rows matched that exact Pal name.");
   }
 
   const knowledge = (ctx as typeof ctx & { knowledge: PalKnowledgeService }).knowledge;
@@ -410,6 +481,7 @@ export async function executeAiTool(
             validation.args.child as string,
             validation.args.player as string | undefined,
             requesterPlayerUid,
+            validation.args.passive as string | undefined,
           );
       }
       if (name === "get_owned_pal_detail") {
@@ -440,6 +512,19 @@ export async function executeAiTool(
     switch (name) {
       case "get_server_status":
         return success(meta, serverStatus(snapshot));
+      case "get_live_world_summary":
+        return snapshot.worldSummary
+          ? success(meta, snapshot.worldSummary as unknown as JsonValue)
+          : failure("game_data_unavailable", "The aggregate Game Data API cache is not available yet.", meta);
+      case "get_live_base_workers":
+        return liveBaseWorkersResult(
+          snapshot,
+          meta,
+          validation.args.player as string | undefined,
+          validation.args.base as string | undefined,
+          validation.args.attentionOnly === true,
+          requesterPlayerUid,
+        );
       case "list_players":
         return success(meta, listPlayers(snapshot, validation.args.onlineOnly === true));
       case "get_player":
@@ -457,12 +542,24 @@ export async function executeAiTool(
       case "find_pal_owners":
         return ownersResult(snapshot, meta, validation.args.pal as string);
       case "get_collection":
+        // Collection completion needs the canonical Paldeck denominator, not
+        // just the species currently present in the save. Keep the tool useful
+        // on older/test contexts where knowledge is absent, but enrich it when
+        // the pinned catalogue is available.
+        if (knowledge) {
+          try {
+            await knowledge.init();
+          } catch {
+            // The observed roster is still valid without catalogue progress.
+          }
+        }
         return collectionResult(
           snapshot,
           meta,
           validation.args.player as string | undefined,
           validation.args.pal as string | undefined,
           requesterPlayerUid,
+          knowledge?.status().ready ? knowledge : undefined,
         );
       default:
         return failure("unknown_tool", "Unknown AI tool.");
@@ -475,6 +572,7 @@ export async function executeAiTool(
 const PURE_KNOWLEDGE_TOOLS = new Set([
   "search_pal_knowledge",
   "get_pal_knowledge",
+  "compare_pal_movement",
   "validate_pal_names",
   "calculate_breeding_pair",
   "find_breeding_parents",
@@ -486,6 +584,8 @@ type Validated =
 
 const ARGUMENTS: Record<string, Record<string, "string" | "boolean" | "number">> = {
   get_server_status: {},
+  get_live_world_summary: {},
+  get_live_base_workers: { player: "string", base: "string", attentionOnly: "boolean" },
   list_players: { onlineOnly: "boolean" },
   get_player: { nameOrUid: "string" },
   compare_players: { a: "string", b: "string" },
@@ -494,6 +594,8 @@ const ARGUMENTS: Record<string, Record<string, "string" | "boolean" | "number">>
   get_collection: { player: "string", pal: "string" },
   search_pal_knowledge: { query: "string" },
   get_pal_knowledge: { pal: "string" },
+  get_pal_locations: { pal: "string" },
+  compare_pal_movement: { pals: "string" },
   validate_pal_names: { names: "string" },
   calculate_breeding_pair: { parent1: "string", parent2: "string" },
   find_breeding_parents: { child: "string", limit: "number" },
@@ -501,7 +603,7 @@ const ARGUMENTS: Record<string, Record<string, "string" | "boolean" | "number">>
   recommend_owned_party: { player: "string" },
   get_owned_pal_detail: { pal: "string", player: "string" },
   recommend_owned_base_setup: { player: "string", base: "string", slots: "number" },
-  recommend_breeding_path: { child: "string", player: "string" },
+  recommend_breeding_path: { child: "string", player: "string", passive: "string" },
   search_palworld_web: { query: "string" },
   search_general_palworld_knowledge: { query: "string" },
 };
@@ -512,6 +614,8 @@ const REQUIRED: Record<string, string[]> = {
   find_pal_owners: ["pal"],
   search_pal_knowledge: ["query"],
   get_pal_knowledge: ["pal"],
+  get_pal_locations: ["pal"],
+  compare_pal_movement: ["pals"],
   validate_pal_names: ["names"],
   calculate_breeding_pair: ["parent1", "parent2"],
   find_breeding_parents: ["child"],
@@ -556,7 +660,8 @@ function validate(name: string, value: unknown): Validated {
     if (expected === "string" && (current as string).trim().length === 0) {
       return { ok: false, code: "invalid_arguments", message: `${key} must not be empty.` };
     }
-    if (expected === "string" && (current as string).length > 100) {
+    const maxStringLength = key === "pals" ? 500 : 100;
+    if (expected === "string" && (current as string).length > maxStringLength) {
       return { ok: false, code: "invalid_arguments", message: `${key} is too long.` };
     }
     if ((key === "limit" || key === "slots") && (!Number.isInteger(current) || (current as number) < 1 || (current as number) > 20)) {
@@ -585,6 +690,32 @@ function executeKnowledgeTool(
     return result.data
       ? knowledgeSuccess(result.metadata, fullPalKnowledge(result.data))
       : knowledgeFailure("not_found", "No Pal knowledge matched that name or internal ID.", result.metadata);
+  }
+  if (name === "compare_pal_movement") {
+    const proposed = [...new Set((args.pals as string)
+      .split(/[,|\n]+/)
+      .map((value) => value.trim())
+      .filter(Boolean))]
+      .slice(0, 20);
+    const checked = proposed.map((input) => ({ input, pal: knowledge.getExact(input).data }));
+    const recognized = checked.flatMap(({ input, pal }) => pal ? [{
+      input,
+      internalId: pal.internalId,
+      name: pal.name,
+      movement: {
+        walkSpeed: pal.walkSpeed,
+        runSpeed: pal.runSpeed,
+        rideSprintSpeed: pal.rideSprintSpeed,
+        transportSpeed: pal.transportSpeed,
+        stamina: pal.stamina,
+      },
+    }] : []);
+    return knowledgeSuccess(knowledge.status().metadata!, {
+      statUnits: "Palworld internal movement values; compare values within the same field only.",
+      mountabilityCaveat: "A rideSprintSpeed value does not prove the Pal is rideable; partner-skill mount capability is not present in the pinned source.",
+      compared: recognized,
+      unrecognized: checked.filter(({ pal }) => pal === null).map(({ input }) => input),
+    });
   }
   if (name === "validate_pal_names") {
     const proposed = [...new Set((args.names as string)
@@ -983,6 +1114,7 @@ function breedingPathResult(
   childQuery: string,
   playerQuery?: string,
   requesterPlayerUid?: string,
+  passiveQuery?: string,
 ): ToolResult {
   const meta = snapshotMeta(snapshot);
   const player = playerQuery === undefined ? undefined : resolvePlayer(snapshot, playerQuery, requesterPlayerUid);
@@ -1005,6 +1137,13 @@ function breedingPathResult(
     const key = baseCharacterId(pal.characterId).toLocaleLowerCase("en-US");
     owned.set(key, [...(owned.get(key) ?? []), pal]);
   }
+  const passiveNeedle = passiveQuery?.trim().toLocaleLowerCase("en-US") ?? "";
+  const passiveCarriers = passiveNeedle ? [...owned.values()].flat().filter((pal) =>
+    (pal.passiveSkillIds ?? []).some((id) =>
+      id.toLocaleLowerCase("en-US").includes(passiveNeedle) || humanizeInternalName(id).toLocaleLowerCase("en-US").includes(passiveNeedle)
+    )
+  ) : [];
+  const carrierSpecies = new Set(passiveCarriers.map((pal) => baseCharacterId(pal.characterId).toLocaleLowerCase("en-US")));
   const ranked = result.data.map((pair) => {
     const firstKey = pair.parent1.internalId.toLocaleLowerCase("en-US");
     const secondKey = pair.parent2.internalId.toLocaleLowerCase("en-US");
@@ -1023,10 +1162,12 @@ function breedingPathResult(
       secondOwned,
       missingParents,
       genderMatch,
+      passiveCarrierParents: Number(carrierSpecies.has(firstKey)) + Number(carrierSpecies.has(secondKey)),
       rarity: pair.parent1.rarity + pair.parent2.rarity,
     };
   }).sort((a, b) =>
     Number(b.genderMatch.compatible) - Number(a.genderMatch.compatible) ||
+    b.passiveCarrierParents - a.passiveCarrierParents ||
     a.missingParents - b.missingParents ||
     Number(a.genderMatch.reason !== "ready") - Number(b.genderMatch.reason !== "ready") ||
     a.rarity - b.rarity ||
@@ -1040,13 +1181,29 @@ function breedingPathResult(
   return knowledgeSuccess(result.metadata, {
     child: compactPalKnowledge(shown[0]!.pair.child),
     player: player ? { uid: player.uid, name: player.name } : null,
-    rankingBasis: "Observed compatible opposite-gender parent pair first, then missing instances and lower combined dataset rarity. This is not a passive-inheritance or capture-difficulty guarantee.",
+    rankingBasis: `Observed compatible opposite-gender parent pair first${passiveNeedle ? ", then routes using an observed desired-passive carrier" : ""}, then missing instances and lower combined dataset rarity. This is not a capture-difficulty guarantee.`,
+    desiredPassive: passiveNeedle ? {
+      query: passiveQuery!.trim(),
+      observedCarrierCount: passiveCarriers.length,
+      observedCarriers: passiveCarriers.slice(0, 20).map((pal) => ({
+        instanceId: pal.instanceId,
+        species: pal.displayName,
+        gender: pal.gender ?? "unknown",
+        owner: pal.ownerName || "Owner unavailable",
+        matchingPassiveIds: (pal.passiveSkillIds ?? []).filter((id) => id.toLocaleLowerCase("en-US").includes(passiveNeedle) || humanizeInternalName(id).toLocaleLowerCase("en-US").includes(passiveNeedle)),
+      })),
+      truncated: passiveCarriers.length > 20,
+      feasibility: passiveCarriers.length > 0
+        ? "At least one scoped owned Pal carries a matching passive. Inheritance is chance-based; this tool cannot guarantee that the target egg receives or preserves it."
+        : "No matching passive carrier is visible in the scoped roster. The species path may still work, but it does not establish passive inheritance.",
+    } : null,
     totalCombinations: result.data.length,
     truncated: result.data.length > shown.length,
-    combinations: shown.map(({ pair, firstOwned, secondOwned, missingParents, genderMatch }) => ({
+    combinations: shown.map(({ pair, firstOwned, secondOwned, missingParents, genderMatch, passiveCarrierParents }) => ({
       readyFromCurrentRoster: genderMatch.compatible,
       missingParentInstances: missingParents,
       genderIssue: genderMatch.compatible ? null : genderMatch.reason,
+      desiredPassiveCarrierParents: passiveCarrierParents,
       parent1: { ...compactBreedingPal(pair.parent1, pair.parent1Gender), currentInstances: firstOwned, observedGenders: genderCounts(owned.get(pair.parent1.internalId.toLocaleLowerCase("en-US")) ?? []) },
       parent2: { ...compactBreedingPal(pair.parent2, pair.parent2Gender), currentInstances: secondOwned, observedGenders: genderCounts(owned.get(pair.parent2.internalId.toLocaleLowerCase("en-US")) ?? []) },
       child: { internalId: pair.child.internalId, name: pair.child.name },
@@ -1240,6 +1397,63 @@ function publicPlayerSummary(player: PlayerSummary): ToolResult {
   };
 }
 
+function liveBaseWorkersResult(
+  snapshot: WorldSnapshot,
+  meta: ToolResult,
+  playerQuery: string | undefined,
+  baseQuery: string | undefined,
+  attentionOnly: boolean,
+  requesterPlayerUid?: string,
+): ToolResult {
+  const live = snapshot.liveWorkers;
+  if (!live || (live.state !== "ready" && live.state !== "stale")) {
+    return failure("game_data_unavailable", "Exact-linked live base workers are not available yet.", meta);
+  }
+  let allowedBaseIds: Set<string> | undefined;
+  let selectedPlayer: PlayerSummary | undefined;
+  if (playerQuery !== undefined) {
+    selectedPlayer = resolvePlayer(snapshot, playerQuery, requesterPlayerUid);
+    if (!selectedPlayer) return failure("not_found", "No current player matched that exact name, UID, or linked self.", meta);
+    const guild = snapshot.guilds.find((candidate) =>
+      candidate.id === selectedPlayer!.guildId || candidate.members.some((member) => member.uid === selectedPlayer!.uid));
+    if (!guild) return failure("not_found", "That player has no current guild bases.", meta);
+    allowedBaseIds = new Set(guild.bases.map((base) => base.id));
+  }
+
+  let workers = live.workers.filter((worker) => !allowedBaseIds || allowedBaseIds.has(worker.baseId));
+  if (baseQuery !== undefined) {
+    const normalized = baseQuery.trim().toLowerCase();
+    const orderedIds = [...new Set(workers.map((worker) => worker.baseId))].sort();
+    const ordinal = /^\d+$/.test(normalized) ? Number(normalized) - 1 : -1;
+    const matchedId = ordinal >= 0 ? orderedIds[ordinal] : orderedIds.find((id) => id.toLowerCase() === normalized || id.toLowerCase().startsWith(normalized));
+    if (!matchedId) return failure("not_found", "No exact-linked live base matched that base number or ID.", meta);
+    workers = workers.filter((worker) => worker.baseId === matchedId);
+  }
+  if (attentionOnly) {
+    workers = workers.filter((worker) => worker.activity === "idle" || worker.activity === "inactive" || worker.activity === "incapacitated" || (worker.hpPercent !== null && worker.hpPercent < 25));
+  }
+
+  const grouped = new Map<string, typeof workers>();
+  for (const worker of workers) grouped.set(worker.baseId, [...(grouped.get(worker.baseId) ?? []), worker]);
+  const rows = [...grouped.entries()].map(([baseId, members]) => ({
+    baseId,
+    total: members.length,
+    needsAttention: members.filter((worker) => worker.activity === "incapacitated" || worker.activity === "idle" || worker.activity === "inactive" || (worker.hpPercent !== null && worker.hpPercent < 25)).length,
+    workerColumns: ["name", "characterId", "level", "activity", "hpPercent", "ownerName", "ownerSource", "instanceId"],
+    workers: members.slice(0, 50).map((worker) => [worker.displayName, worker.characterId, worker.level, worker.activity, worker.hpPercent, worker.ownerName ?? null, worker.ownerSource ?? null, worker.instanceId]),
+    truncated: members.length > 50,
+  }));
+  return success(meta, {
+    state: live.state,
+    capturedAt: live.capturedAt,
+    player: selectedPlayer ? { uid: selectedPlayer.uid, name: selectedPlayer.name, guildId: selectedPlayer.guildId } : null,
+    attentionOnly,
+    bases: rows,
+    totalWorkers: workers.length,
+    dataBoundary: "Every worker is joined by the exact save-pal component of Pocketpair's compound InstanceID. Bases are guild-owned. ownerSource=last_observed is historical attribution; no location or proximity guessing is used.",
+  });
+}
+
 function resolvePlayer(
   snapshot: WorldSnapshot,
   query: string,
@@ -1392,6 +1606,7 @@ function collectionResult(
   playerQuery?: string,
   palQuery?: string,
   requesterPlayerUid?: string,
+  knowledge?: PalKnowledgeService,
 ): ToolResult {
   let pals = snapshot.pals;
   let subject: JsonValue = "server";
@@ -1441,6 +1656,58 @@ function collectionResult(
     ? matching.length
     : MAX_SERVER_SPECIES;
   const shown = matching.slice(0, limit);
+  let catalogueProgress: ToolResult = {};
+  if (knowledge) {
+    const catalogue = knowledge.list().data;
+    const canonicalObserved = new Set(
+      pals.flatMap((pal) => {
+        const known = exactPalKnowledge(knowledge, pal);
+        return known ? [known.internalId.toLocaleLowerCase("en-US")] : [];
+      }),
+    );
+    const missing = catalogue.filter(
+      (pal) => !canonicalObserved.has(pal.internalId.toLocaleLowerCase("en-US")),
+    );
+    const catalogueTotal = catalogue.length;
+    const catalogueObserved = catalogueTotal - missing.length;
+    // A 0-0 wild profile means the source has no ordinary wild-level evidence
+    // (raid/event/quest-only entries also use it). Never call those an easy
+    // catch, and exclude synthetic quest/PIDF rows from this recommendation
+    // shortlist even though completion accounting remains unchanged.
+    const missingByEase = missing.filter((pal) =>
+      pal.minWildLevel > 0 &&
+      pal.maxWildLevel > 0 &&
+      pal.dexNumber < 10_000 &&
+      !/^(?:en_text|pidf rider)$/i.test(pal.name.trim())
+    ).sort(
+      (a, b) =>
+        a.minWildLevel - b.minWildLevel ||
+        a.rarity - b.rarity ||
+        a.maxWildLevel - b.maxWildLevel ||
+        a.dexNumber - b.dexNumber ||
+        compareText(a.name, b.name),
+    );
+    const missingProfile = (pal: PalKnowledge): JsonValue => [
+      pal.name,
+      pal.minWildLevel,
+      pal.maxWildLevel,
+      pal.rarity,
+    ];
+    catalogueProgress = {
+      catalogueSpecies: catalogueTotal,
+      catalogueObservedSpecies: catalogueObserved,
+      speciesYetToObserve: missing.length,
+      completionPercent: catalogueTotal > 0
+        ? Number(((catalogueObserved / catalogueTotal) * 100).toFixed(1))
+        : 0,
+      progressBasis: "Canonical species represented in current save holdings; a previously caught Pal that was released or removed may appear missing.",
+      missingSpeciesColumns: ["name", "minWildLevel", "maxWildLevel", "rarity"],
+      easiestMissingSpecies: missingByEase.slice(0, 20).map(missingProfile),
+      easiestMissingRule: "Heuristic order: lower minimum wild level, then lower rarity and maximum wild level. Verify spawn access separately.",
+      missingSpecies: missing.map(missingProfile),
+      missingSpeciesTruncated: false,
+    };
+  }
   return success(meta, {
     subject,
     currentPalInstances: pals.length,
@@ -1448,6 +1715,7 @@ function collectionResult(
     alphaSpecies: ordered.filter((pal) => pal.alpha).length,
     luckySpecies: ordered.filter((pal) => pal.lucky).length,
     ...(palQuery === undefined ? {} : { palQuery: palQuery.trim(), matchedSpecies: matching.length }),
+    ...catalogueProgress,
     complete: shown.length === matching.length,
     truncated: shown.length < matching.length,
     speciesColumns: ["name", "instances", "maxLevel", "alpha", "boss", "lucky"],

@@ -32,6 +32,16 @@ describe("loadConfig history drift mode", () => {
   });
 });
 
+describe("loadConfig server label", () => {
+  it("uses a product-safe default and accepts an operator label", () => {
+    stubRequired();
+    vi.stubEnv("SERVER_LABEL", "");
+    expect(loadConfig().serverLabel).toBe("Palworld Server");
+    vi.stubEnv("SERVER_LABEL", "Friends Server");
+    expect(loadConfig().serverLabel).toBe("Friends Server");
+  });
+});
+
 describe("loadConfig AI reliability", () => {
   it("uses bounded timeout and search-cache defaults", () => {
     stubRequired();

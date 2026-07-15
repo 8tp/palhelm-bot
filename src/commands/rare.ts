@@ -47,7 +47,7 @@ export const rareCommand: Command = {
     });
     if (rare.length > lines.length) lines.push(`…and ${rare.length - lines.length} more`);
     const counts = `${rare.filter(isBossVariant).length} Boss · ${rare.filter((pal) => pal.isAlpha && !isBossVariant(pal)).length} Alpha · ${rare.filter((pal) => pal.isLucky).length} Lucky`;
-    await interaction.editReply({ embeds: [baseEmbed(player ? `✨ ${player.name}'s Rare Pals` : `✨ ${ctx.config.serverLabel} rare gallery`)
+    await interaction.editReply({ embeds: [baseEmbed(player ? `✨ ${player.name}'s Rare Pals` : `✨ ${ctx.config.serverLabel} Rare Gallery`)
       .setDescription(lines.length > 0 ? `**${counts}**\n\n${truncate(lines.join("\n"), 3900)}` : "No matching rare Pals are currently observed.")
       .setFooter({ text: "Current save snapshot · 👑 Boss · ⭐ Alpha · 🍀 Lucky" })] });
   },

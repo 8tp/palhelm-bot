@@ -126,11 +126,20 @@ export const mapCommand: Command = {
         .setDescription("Map layer (autocomplete from dataset)")
         .setRequired(false)
         .setAutocomplete(true),
+    )
+    .addStringOption((o) =>
+      o.setName("pal").setDescription("Optional Pal habitat/encounter lookup").setRequired(false).setAutocomplete(true),
     ),
 
   async autocomplete(interaction, ctx) {
-    const focused = interaction.options.getFocused().toLowerCase();
+    const focusedOption = interaction.options.getFocused(true);
+    const focused = String(focusedOption.value).toLowerCase();
     try {
+      if (focusedOption.name === "pal") {
+        await ctx.knowledge.init();
+        await interaction.respond(ctx.knowledge.search(focused, 25).data.map((pal) => ({ name: truncate(pal.name, 100), value: pal.name.slice(0, 100) })));
+        return;
+      }
       const { data: dataset } = await ctx.integration.map();
       const layers = dataset.layers ?? [];
       const matches = layers
@@ -167,14 +176,27 @@ export const mapCommand: Command = {
     const totalBases = guilds.reduce((n, g) => n + g.bases.length, 0);
     const livePlayers = sessionPlayers.filter((p) => p.online && p.location);
     const layerOpt = interaction.options.getString("layer");
+    const palQuery = interaction.options.getString("pal");
+    const palLocations = palQuery ? ctx.locations.search(palQuery, 12) : [];
     const layer = resolveLayer(layers, layerOpt);
 
-    const baseEmbedFields = () =>
-      baseEmbed("World map").addFields(
+    const baseEmbedFields = () => {
+      const embed = baseEmbed("World map").addFields(
         { name: "Players", value: `${livePlayers.length} online`, inline: true },
         { name: "Bases", value: basesDrift && totalBases === 0 ? "unavailable" : `${totalBases}`, inline: true },
         { name: "Guilds", value: `${guilds.length}`, inline: true },
       );
+      if (palQuery) embed.addFields({
+        name: `${truncate(palQuery, 80)} encounters`,
+        value: palLocations.length === 0 ? "No exact rows in the local attributed location cache." : truncate(palLocations.map((row) =>
+          `${row.variantType ? `${row.variantType} ` : ""}${row.locationName}${row.level === null ? "" : ` Lv ${row.level}`}${row.coords ? ` · (${row.coords.x}, ${row.coords.y})` : ""}`
+        ).join("\n"), 1024),
+      }, {
+        name: "Encounter source",
+        value: "[The Palworld Wiki](https://palworld.wiki.gg/wiki/Template:Entity_Location_Spawn) · CC BY-SA 4.0 · in-game coordinates are listed as text until map-coordinate calibration is proven.",
+      });
+      return embed;
+    };
 
     if (!layer) {
       const embed = baseEmbedFields().setDescription(

@@ -19,6 +19,22 @@ const snapshot: WorldSnapshot = {
     uptimeSec: 90,
     baseCamps: 1,
   },
+  worldSummary: {
+    state: "ready",
+    capturedAt: "2020-01-01T00:00:00.000Z",
+    lastAttemptAt: "2020-01-01T00:00:00.000Z",
+    fps: 58,
+    fpsAvg: 59,
+    counts: { players: 1, partyPals: 1, basePals: 2, wildPals: 3, npcs: 4, palBoxes: 1, unknown: 0 },
+  },
+  liveWorkers: {
+    state: "ready",
+    capturedAt: "2020-01-01T00:00:00.000Z",
+    workers: [
+      { instanceId: "p2", characterId: "Anubis", displayName: "Anubis", isBoss: false, level: 25, hpPercent: 20, active: true, activity: "working", baseId: "b1", ownerUid: "u2", ownerName: "Beta", ownerSource: "last_observed" },
+      { instanceId: "p5", characterId: "SheepBall", displayName: "Lamball", isBoss: false, level: 12, hpPercent: 0, active: false, activity: "incapacitated", baseId: "b1" },
+    ],
+  },
   guilds: [{ id: "g1", name: "Guild", adminUid: "u2", memberCount: 2, members: [], bases: [{ id: "b1", location: { x: 100, y: 200 }, level: 10 }] }],
   players: [
     {
@@ -35,6 +51,7 @@ const snapshot: WorldSnapshot = {
       instanceId: "p1", characterId: "Anubis", displayName: "Anubis", level: 30,
       isAlpha: true, isLucky: false, ownerUid: "u2", ownerName: "", inParty: true,
       gender: "male",
+      passiveSkillIds: ["PassiveSkill_WorkSpeed_Up_3"],
     },
     {
       instanceId: "p2", characterId: "Anubis", displayName: "Anubis", level: 25,
@@ -115,6 +132,7 @@ function knowledgeContext() {
   const service = {
     init: vi.fn().mockResolvedValue(undefined),
     status: vi.fn(() => ({ ready: true, palCount: 2, breedingCombinationCount: 1, metadata })),
+    list: vi.fn(() => ({ data: [anubis, lamball], metadata })),
     search: vi.fn(() => ({ data: [anubis, lamball], metadata })),
     get: vi.fn((query: string) => ({
       data: query.toLowerCase() === "anubis"
@@ -161,7 +179,7 @@ function knowledgeContext() {
 describe("AI snapshot tools", () => {
   it("exports unique OpenRouter-compatible definitions", () => {
     const names = aiToolDefinitions.map((tool) => tool.function.name);
-    expect(names).toHaveLength(19);
+    expect(names).toHaveLength(23);
     expect(new Set(names).size).toBe(names.length);
     for (const tool of aiToolDefinitions) {
       expect(tool.type).toBe("function");
@@ -178,6 +196,27 @@ describe("AI snapshot tools", () => {
       data: { total: 2, players: [{ name: "Alpha" }, { name: "Beta" }] },
     });
     expect(get).toHaveBeenCalledOnce();
+  });
+
+  it("returns the cached aggregate-only live world summary", async () => {
+    const result = await executeAiTool("get_live_world_summary", {}, context().ctx);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { state: "ready", counts: { players: 1, basePals: 2, wildPals: 3, npcs: 4 } },
+    });
+  });
+
+  it("returns exact live workers for the requester's guild bases", async () => {
+    const result = await executeAiTool("get_live_base_workers", { player: "self", attentionOnly: true }, context().ctx, "u2");
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        player: { uid: "u2", name: "Beta", guildId: "g1" },
+        attentionOnly: true,
+        totalWorkers: 2,
+        bases: [{ baseId: "b1", total: 2, needsAttention: 2 }],
+      },
+    });
   });
 
   it("uses snapshot facts for comparison, records, owners, and collection", async () => {
@@ -245,6 +284,24 @@ describe("AI snapshot tools", () => {
         matchedSpecies: 1,
         complete: true,
         species: [["Species 74", 1, 75, true, false, false]],
+      },
+    });
+  });
+
+  it("adds complete canonical Paldeck progress profiles when knowledge is ready", async () => {
+    const { ctx } = knowledgeContext();
+    const progress = await executeAiTool("get_collection", { player: "Alpha" }, ctx);
+
+    expect(progress).toMatchObject({
+      ok: true,
+      data: {
+        catalogueSpecies: 2,
+        catalogueObservedSpecies: 1,
+        speciesYetToObserve: 1,
+        completionPercent: 50,
+        missingSpeciesColumns: ["name", "minWildLevel", "maxWildLevel", "rarity"],
+        missingSpecies: [["Anubis", 55, 80, 10]],
+        missingSpeciesTruncated: false,
       },
     });
   });
@@ -321,6 +378,22 @@ describe("AI snapshot tools", () => {
       expect.arrayContaining([expect.objectContaining({ name: "Handiwork", level: 6 })]),
     );
 
+    const movement = await executeAiTool(
+      "compare_pal_movement",
+      { pals: "Anubis, Lamball, Aerodeus" },
+      ctx,
+    );
+    expect(movement).toMatchObject({
+      ok: true,
+      data: {
+        compared: [
+          { name: "Anubis", movement: { runSpeed: 800, rideSprintSpeed: 1000, stamina: 100 } },
+          { name: "Lamball", movement: { runSpeed: 800, rideSprintSpeed: 1000, stamina: 100 } },
+        ],
+        unrecognized: ["Aerodeus"],
+      },
+    });
+
     const bred = await executeAiTool(
       "calculate_breeding_pair",
       { parent1: "Anubis", parent2: "Lamball" },
@@ -334,7 +407,7 @@ describe("AI snapshot tools", () => {
       ctx,
     );
     expect(parents).toMatchObject({ data: { requestedLimit: 2, totalReturned: 1 } });
-    expect(service.init).toHaveBeenCalledTimes(4);
+    expect(service.init).toHaveBeenCalledTimes(5);
     expect(snapshotGet).not.toHaveBeenCalled();
   });
 
@@ -449,7 +522,7 @@ describe("AI snapshot tools", () => {
     const { ctx, service } = knowledgeContext();
     const result = await executeAiTool(
       "recommend_breeding_path",
-      { child: "Lamball" },
+      { child: "Lamball", passive: "work speed" },
       ctx,
     );
 
@@ -459,15 +532,30 @@ describe("AI snapshot tools", () => {
       data: {
         child: { name: "Lamball" },
         totalCombinations: 1,
+        desiredPassive: { observedCarrierCount: 1, feasibility: expect.stringContaining("chance-based") },
         combinations: [{
           readyFromCurrentRoster: true,
           missingParentInstances: 0,
+          desiredPassiveCarrierParents: 1,
           parent1: { name: "Anubis", currentInstances: 2 },
           parent2: { name: "Lamball", currentInstances: 1 },
         }],
       },
     });
     expect(service.parentsFor).toHaveBeenCalledWith("Lamball", 100);
+  });
+
+  it("returns attributed cached encounter coordinates without mixing them with live positions", async () => {
+    const ctx = {
+      locations: {
+        status: () => ({ available: true, rowCount: 1, generatedAt: "2026-07-15T00:00:00Z", sourceUrl: "https://palworld.wiki.gg/wiki/Template:Entity_Location_Spawn", license: "CC BY-SA 4.0" }),
+        search: () => [{ locationName: "Twilight Dunes", entityName: "Anubis", entityType: "pal", variantType: "Alpha", level: 47, coords: { x: -130, y: -96 }, note: "" }],
+      },
+    } as unknown as BotContext;
+    const result = await executeAiTool("get_pal_locations", { pal: "Anubis" }, ctx);
+    expect(result).toMatchObject({ ok: true, data: { habitats: ["Twilight Dunes"], encounters: [{ coordinates: { x: -130, y: -96 } }] } });
+    expect(JSON.stringify(result)).toContain("not raw server world coordinates");
+    expect(JSON.stringify(result)).toContain("CC BY-SA 4.0");
   });
 
   it("builds a combat party exclusively from the selected player's owned instances", async () => {

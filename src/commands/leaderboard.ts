@@ -140,7 +140,7 @@ export const leaderboardCommand: Command = {
 
     const render = async (category: Category): Promise<InteractionEditReplyOptions> => {
       const { lines, items, rankedCount } = rankCategory(snapshot, category);
-      const title = `🏆 ${ctx.config.serverLabel} leaderboard — ${CATEGORY_LABELS[category]}`;
+      const title = `🏆 ${ctx.config.serverLabel} Leaderboard — ${CATEGORY_LABELS[category]}`;
       const omitted = rankedCount - lines.length;
       const body = lines.length > 0
         ? [...lines, ...(omitted > 0 ? [`…and ${omitted} more`] : [])].join("\n")

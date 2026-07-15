@@ -131,7 +131,7 @@ export function instanceFields(pal: RosterPal, known: PalKnowledge | null, owner
       ].filter(Boolean).join("\n"), 1024),
     });
   } else {
-    fields.push({ name: "Individual save data", value: "Passives, equipped attacks, gender, HP, and talents require the pending panel contract rollout." });
+    fields.push({ name: "Individual save data", value: "Detailed instance fields are unavailable for this Pal in the current public snapshot." });
   }
   return fields;
 }

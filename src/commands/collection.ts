@@ -92,7 +92,7 @@ export const collectionCommand: Command = {
       missing.length ? `**Missing (${missing.length})**\n${missingLines.join("\n")}${missing.length > missingLines.length ? `\n…and ${missing.length - missingLines.length} more` : ""}` : "🎉 **Paldeck complete!**",
       missingHint ? `\n${missingHint}` : "",
     ].join("\n");
-    const embed = baseEmbed(player ? `📗 ${truncate(player.name, 210)}'s Collection` : `📗 ${ctx.config.serverLabel} collection`)
+    const embed = baseEmbed(player ? `📗 ${truncate(player.name, 210)}'s Collection` : `📗 ${ctx.config.serverLabel} Collection`)
       .setDescription(truncate(warning ? `${warning}\n\n${body}` : body, 4096))
       .setFooter({ text: truncate(`${metadataLabel(ctx.knowledge)} · Current save holdings`, 2048) });
     const files: AttachmentBuilder[] = [];
