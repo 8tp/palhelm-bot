@@ -121,6 +121,7 @@ describe("snapshot social commands", () => {
   it("orders leaderboard ties deterministically and labels current holdings", async () => {
     const { interaction, ctx, editReply } = harness({ category: "level" });
     await leaderboardCommand.execute(interaction as never, ctx as never);
+    expect(editReply.mock.calls[0]?.[0].embeds[0].toJSON().title).toContain("the server Leaderboard");
     expect(description(editReply)).toMatch(/1\.\*\* Alpha — Lv 20[\s\S]*2\.\*\* Beta — Lv 20/);
     expect(ctx.snapshots.get).toHaveBeenCalledOnce();
 

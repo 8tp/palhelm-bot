@@ -24,6 +24,7 @@ export interface Milestone {
   previousPlayerName?: string;
   confidence?: "observed";
   trackingStartedAt?: string;
+  observedAt?: string;
 }
 
 type RecordKey = "player_level" | "player_playtime" | "pal_level";
@@ -83,7 +84,7 @@ interface HistorySample {
 }
 
 interface TrackerState {
-  version: 3;
+  version: 4;
   trackingStartedAt: string;
   lastCapturedAt: string | null;
   players: Record<string, PlayerObservation>;
@@ -98,6 +99,8 @@ interface TrackerState {
   history: HistorySample[];
   /** Null upgrades older files by establishing one silent record baseline. */
   recordHolders: Record<RecordKey, TrackedRecord | null> | null;
+  /** Bounded observed holder-change log used by /records. */
+  recordHistory: Milestone[];
 }
 
 export interface PlayerTrend {
@@ -212,7 +215,7 @@ export class ObservationTracker {
         version: number;
         history?: HistorySample[];
       };
-      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) {
+      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4) {
         throw new Error(`unsupported history version ${String(parsed.version)}`);
       }
       const needsPalClaimReset = parsed.version < 3;
@@ -221,7 +224,8 @@ export class ObservationTracker {
       parsed.lastBackupAt ??= null;
       parsed.history ??= []; // v1 state predates the time series; start empty.
       parsed.recordHolders ??= null;
-      this.state = { ...parsed, version: 3, history: parsed.history };
+      parsed.recordHistory ??= [];
+      this.state = { ...parsed, version: 4, history: parsed.history, recordHistory: parsed.recordHistory };
       if (needsPalClaimReset) {
         // v1/v2 accepted any save character as a Pal and could also persist
         // ownerless claims. Keep player/health history, but discard Pal claim
@@ -445,6 +449,12 @@ export class ObservationTracker {
     return this.state?.pendingMilestones[0] ?? null;
   }
 
+  /** Newest-first, bounded, safe observed record-holder changes. */
+  recordHistory(limit = 20): Milestone[] {
+    const bounded = Math.max(1, Math.min(100, Math.trunc(limit)));
+    return [...(this.state?.recordHistory ?? [])].reverse().slice(0, bounded);
+  }
+
   async ackMilestoneBatch(id: string): Promise<void> {
     await this.withLock(async () => {
     await this.initUnlocked();
@@ -625,7 +635,7 @@ export class ObservationTracker {
       }
       if (candidate.value <= previous.value) continue;
       this.state.recordHolders[key] = candidate;
-      milestones.push({
+      const milestone: Milestone = {
         kind: "record",
         playerUid: candidate.holderId,
         playerName: candidate.holderName,
@@ -636,7 +646,11 @@ export class ObservationTracker {
         recordDetail: candidate.detail,
         confidence: "observed",
         trackingStartedAt: this.state.trackingStartedAt,
-      });
+        observedAt: snapshot.capturedAt,
+      };
+      milestones.push(milestone);
+      this.state.recordHistory.push(milestone);
+      if (this.state.recordHistory.length > 100) this.state.recordHistory.splice(0, this.state.recordHistory.length - 100);
     }
     return milestones;
   }
@@ -752,7 +766,7 @@ function baselineState(snapshot: WorldSnapshot, trackedPals: readonly RosterPal[
     };
   }
   return {
-    version: 3,
+    version: 4,
     trackingStartedAt: now.toISOString(),
     lastCapturedAt: snapshot.capturedAt,
     players,
@@ -765,6 +779,7 @@ function baselineState(snapshot: WorldSnapshot, trackedPals: readonly RosterPal[
     lastBackupAt: null,
     history: [historySample(snapshot, now, null)],
     recordHolders: recordCandidates(snapshot, trackedPals),
+    recordHistory: [],
   };
 }
 

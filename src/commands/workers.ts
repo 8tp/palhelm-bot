@@ -56,7 +56,7 @@ export const workersCommand: Command = {
       return known && work ? [{ pal, known, work }] : [];
     }).sort((a, b) => b.work.level - a.work.level || b.pal.level - a.pal.level || a.known.name.localeCompare(b.known.name) || a.pal.instanceId.localeCompare(b.pal.instanceId));
     if (!candidates.length) {
-      await interaction.editReply({ embeds: [baseEmbed(`🛠️ ${job} workers`).setDescription(`${player ? `${player.name} does` : `${ctx.config.serverLabel} does`} not currently have an observed Pal capable of **${job}**.`)] });
+      await interaction.editReply({ embeds: [baseEmbed(`🛠️ ${job} Workers`).setDescription(`${player ? `${player.name} does` : `${ctx.config.serverLabel} does`} not currently have an observed Pal capable of **${job}**.`)] });
       return;
     }
     const shown = candidates.slice(0, 15);

@@ -26,11 +26,13 @@ import { baseCharacterId } from "./pals/presentation.js";
 import { GoalService } from "./goals/service.js";
 import { PlayerLinkService } from "./identity/playerLinks.js";
 import { KnowledgeCorpus } from "./knowledge/corpus.js";
+import { PalLocationService } from "./knowledge/locations.js";
 
 const config = loadConfig();
 const integration = new IntegrationClient(config.palhelmBaseUrl, config.integrationKey);
 const knowledge = new PalKnowledgeService(join(config.dataDir, "pal-knowledge.json"));
 const generalKnowledge = new KnowledgeCorpus(join(config.dataDir, "general-knowledge-corpus.json"));
+const locations = new PalLocationService(join(config.dataDir, "pal-locations.json"));
 // Replace raw save identifiers (e.g. "PinkRabbit_Grass", "BOSS_Female_People03")
 // with pinned Pal names or humanized NPC labels on every snapshot. Falls back to
 // raw/humanized names until the knowledge cache has loaded.
@@ -72,6 +74,7 @@ const ctx: BotContext = {
   observations,
   knowledge,
   generalKnowledge,
+  locations,
   goals,
   playerLinks,
   openRouter: config.openRouterApiKey
@@ -116,6 +119,11 @@ client.once("clientReady", async () => {
     console.log(corpusStatus.available
       ? `[bot] general knowledge corpus ready (${corpusStatus.documentCount} sections)`
       : "[bot] general knowledge corpus not installed; using the built-in field guide and web fallback");
+    await locations.init();
+    const locationStatus = locations.status();
+    console.log(locationStatus.available
+      ? `[bot] attributed location cache ready (${locationStatus.rowCount} encounter rows)`
+      : "[bot] location cache not installed; /dex uses cached web search for drops and locations");
     await observations.init();
     await goals.init();
     await playerLinks.init();
@@ -168,6 +176,21 @@ client.on("interactionCreate", async (interaction) => {
       await cmd?.autocomplete?.(interaction, ctx);
     } catch (err) {
       console.error(`[bot] autocomplete ${interaction.commandName} failed:`, err);
+    }
+    return;
+  }
+  if (interaction.isMessageComponent()) {
+    // Collectors own live controls. After a restart their in-memory collector is
+    // gone, so provide an explicit stale response instead of letting Discord's
+    // interaction spinner time out. The short delay lets a live collector win.
+    if (/^(dex_section|records_section|breed_(?:prev|next)|history_(?:prev|next)|box_(?:prev|next)):/u.test(interaction.customId)) {
+      setTimeout(() => {
+        if (interaction.replied || interaction.deferred) return;
+        void interaction.reply({
+          content: "That control expired when Palhelm restarted. Run the command again to open a fresh view.",
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {});
+      }, 750);
     }
     return;
   }

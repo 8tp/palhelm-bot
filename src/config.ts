@@ -69,7 +69,7 @@ export function loadConfig(): BotConfig {
     discordToken: required("DISCORD_TOKEN"),
     applicationId: required("DISCORD_APPLICATION_ID"),
     guildId: required("DISCORD_GUILD_ID"),
-    serverLabel: process.env.SERVER_LABEL?.trim() || "the server",
+    serverLabel: process.env.SERVER_LABEL?.trim() || "Palworld Server",
     notifyChannelId: required("NOTIFY_CHANNEL_ID"),
     activityChannelId: process.env.ACTIVITY_CHANNEL_ID?.trim() || null,
     milestonesChannelId: process.env.MILESTONES_CHANNEL_ID?.trim() || null,

@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { ActivityTracker, activitySeedsFromEvents } from "./activity.js";
 import { assetsFor } from "../discord/palrender.js";
 import { renderMilestoneCard } from "./milestoneCard.js";
+import { renderWeeklyDigestCard } from "./weeklyCard.js";
 
 const OBSERVE_INTERVAL_MS = 10_000;
 const PRESENCE_INTERVAL_MS = 60_000;
@@ -91,7 +92,20 @@ export function startSocialRuntime(
         pending = await ctx.observations.prepareDigest(localDateKey(now), snapshot);
       }
       if (pending) {
-        await channel.send({ embeds: [digestEmbed(pending.digest, ctx.config.serverLabel)] });
+        const embed = digestEmbed(pending.digest, ctx.config.serverLabel);
+        try {
+          const iconBuffers = (await Promise.all(pending.digest.newSpecies.slice(0, 3).map(async (species) => {
+            const known = ctx.knowledge.get(species).data;
+            if (!known) return null;
+            return (await assetsFor(ctx.session).palIcon(known.internalId).catch(() => null))?.buffer ?? null;
+          }))).filter((buffer): buffer is Buffer => buffer !== null);
+          const card = await renderWeeklyDigestCard(pending.digest, ctx.config.serverLabel, iconBuffers);
+          embed.setImage("attachment://weekly-dispatch.jpg");
+          await channel.send({ embeds: [embed], files: [new AttachmentBuilder(card, { name: "weekly-dispatch.jpg" })] });
+        } catch (error) {
+          console.error("[social] weekly card render failed; using embed fallback:", error);
+          await channel.send({ embeds: [embed] });
+        }
         await ctx.observations.ackDigest(pending.key);
       }
     }
@@ -107,13 +121,20 @@ export function startSocialRuntime(
 
   const updatePresence = (): void => {
     const snapshot = ctx.snapshots.peek();
-    const activity = presenceText(snapshot);
+    const activity = presenceText(snapshot, ctx.config.serverLabel);
     if (activity === lastPresence) return;
-    client.user?.setPresence({
-      status: snapshot?.server?.state === "unreachable" ? "dnd" : "online",
-      activities: [{ type: ActivityType.Playing, name: activity }],
-    });
-    lastPresence = activity;
+    if (!client.user) return;
+    try {
+      const status = snapshot?.server?.state === "unreachable" ? "dnd" : "online";
+      client.user.setPresence({
+        status,
+        activities: [{ type: ActivityType.Playing, name: activity }],
+      });
+      lastPresence = activity;
+      console.log(`[presence] ${status} · Playing ${activity}`);
+    } catch {
+      console.warn("[presence] update failed; retrying on the next interval");
+    }
   };
 
   void observe().catch((error) => console.error("[social] observation failed:", error));
@@ -193,7 +214,7 @@ function healthNoticeEmbed(notice: HealthNotice, label: string): EmbedBuilder {
   const recovered = notice.kind.endsWith("recovered");
   return new EmbedBuilder()
     .setColor(recovered ? COLOR_PRIMARY : COLOR_NOTICE)
-    .setTitle(recovered ? `✅ ${label} health recovered` : `⚠️ ${label} health watch`)
+    .setTitle(recovered ? `✅ ${label} Health Recovered` : `⚠️ ${label} Health Watch`)
     .setDescription(notice.message)
     .setFooter({ text: "Notification only · Palhelm never performs automatic remediation" })
     .setTimestamp();
@@ -205,7 +226,7 @@ function goalCompletionEmbed(completion: GoalCompletion, label: string): EmbedBu
       : completion.goal.variant === "lucky" ? "Lucky 🍀 " : "";
   return new EmbedBuilder()
     .setColor(COLOR_NOTICE)
-    .setTitle(`🎯 Goal completed on ${label}`)
+    .setTitle(`🎯 Goal Completed on ${label}`)
     .setDescription(
       `**${truncate(completion.goal.createdByName, 80)}** was tracking **${variant}${truncate(completion.goal.speciesName, 100)}**.\n` +
       `A new matching Pal was observed at level ${completion.pal.level} · ${truncate(completion.pal.ownerName, 80)}.`,
@@ -214,16 +235,22 @@ function goalCompletionEmbed(completion: GoalCompletion, label: string): EmbedBu
     .setTimestamp(new Date(completion.completedAt));
 }
 
-// Discord renders this as "Playing <text>", so every branch leads with "Palworld".
-// The second field is server uptime (a real health signal) rather than the world
-// day count, which reads as noise at a glance.
-function presenceText(snapshot: ReturnType<BotContext["snapshots"]["peek"]>): string {
-  const prefix = "Palworld";
+// Discord renders this as "Playing <text>". Lead with the configured server
+// identity, then show the two most useful at-a-glance live facts.
+export function presenceText(
+  snapshot: ReturnType<BotContext["snapshots"]["peek"]>,
+  serverLabel: string,
+): string {
+  const prefix = serverLabel.trim() || "Palworld";
   if (!snapshot) return `${prefix} · warming up`;
   if (snapshot.server?.state === "unreachable") return `${prefix} · server offline`;
   const metrics = snapshot.metricsCurrent;
   const online = metrics?.players ?? snapshot.players.filter((player) => player.online).length;
   const capacity = metrics?.maxPlayers ? `${online}/${metrics.maxPlayers} online` : `${online} online`;
+  const day = metrics?.day;
+  if (typeof day === "number" && Number.isFinite(day) && day >= 0) {
+    return `${prefix} · ${capacity} · Day ${Math.trunc(day)}`;
+  }
   const uptimeSec = metrics?.uptimeSec ?? snapshot.server?.uptimeSec ?? null;
   const uptime = uptimeSec && uptimeSec > 0 ? ` · up ${compactUptime(uptimeSec)}` : "";
   return `${prefix} · ${capacity}${uptime}`;
@@ -260,7 +287,7 @@ function milestoneEmbed(milestones: Milestone[], label: string): EmbedBuilder {
   if (milestones.length > shown.length) lines.push(`…and ${milestones.length - shown.length} more`);
   return new EmbedBuilder()
     .setColor(COLOR_NOTICE)
-    .setTitle(milestones.length === 1 ? `${label} milestone` : `${label} milestones`)
+    .setTitle(milestones.length === 1 ? `${label} Milestone` : `${label} Milestones`)
     .setDescription(truncate(lines.join("\n"), 4096))
     .setFooter({ text: "Observed since Palhelm tracking began" })
     .setTimestamp(new Date());
@@ -283,7 +310,7 @@ function digestEmbed(digest: WeeklyDigest, label: string): EmbedBuilder {
   const coverage = Math.min(100, (digest.snapshots / expected) * 100).toFixed(1);
   const embed = new EmbedBuilder()
     .setColor(COLOR_PRIMARY)
-    .setTitle(`📜 ${label} weekly dispatch`)
+    .setTitle(`📜 ${label} Weekly Dispatch`)
     .addFields(
       {
         name: "Adventurers",

@@ -122,15 +122,15 @@ function milestoneCopy(milestone: Milestone, label: string): {
   switch (milestone.kind) {
     case "first_species":
       return {
-        eyebrow: "First observed Pal",
+        eyebrow: "First Observed Pal",
         title: milestone.speciesName ?? "New Pal",
-        subtitle: `${player} expanded the server Paldeck`,
+        subtitle: `${player} expanded the ${label} Paldeck`,
         badgeLabel: "NEW",
         badge: "PAL",
       };
     case "first_alpha":
       return {
-        eyebrow: "Rare Pal milestone",
+        eyebrow: "Rare Pal Milestone",
         title: "First Alpha",
         subtitle: milestone.speciesName ? `${player} found ${milestone.speciesName}` : `${player} found their first Alpha Pal`,
         badgeLabel: "ALPHA",
@@ -138,7 +138,7 @@ function milestoneCopy(milestone: Milestone, label: string): {
       };
     case "first_lucky":
       return {
-        eyebrow: "Rare Pal milestone",
+        eyebrow: "Rare Pal Milestone",
         title: "First Lucky",
         subtitle: milestone.speciesName ? `${player} found ${milestone.speciesName}` : `${player} found their first Lucky Pal`,
         badgeLabel: "LUCKY",
@@ -146,7 +146,7 @@ function milestoneCopy(milestone: Milestone, label: string): {
       };
     case "level":
       return {
-        eyebrow: "Player milestone",
+        eyebrow: "Player Milestone",
         title: `Level ${milestone.value ?? 0}`,
         subtitle: `${player} reached a new level`,
         badgeLabel: "LEVEL",
@@ -155,7 +155,7 @@ function milestoneCopy(milestone: Milestone, label: string): {
     case "playtime": {
       const hours = Math.round((milestone.value ?? 0) / 3_600);
       return {
-        eyebrow: "Adventure milestone",
+        eyebrow: "Adventure Milestone",
         title: `${hours} Hours`,
         subtitle: `${player} has been exploring ${label}`,
         badgeLabel: "HOURS",
@@ -164,7 +164,7 @@ function milestoneCopy(milestone: Milestone, label: string): {
     }
     case "record":
       return {
-        eyebrow: "New server record",
+        eyebrow: "New Server Record",
         title: milestone.recordLabel ?? "Record",
         subtitle: `${player} · ${milestone.recordDetail ?? "new high score"}`,
         badgeLabel: "RECORD",

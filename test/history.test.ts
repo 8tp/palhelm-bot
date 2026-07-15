@@ -408,7 +408,9 @@ describe("ObservationTracker", () => {
       recordDetail: "Lv 34",
       confidence: "observed",
       trackingStartedAt: "2026-07-10T12:00:00.000Z",
+      observedAt: "2026-07-10T10:15:00.000Z",
     })]);
+    expect(first.recordHistory()).toEqual([expect.objectContaining({ playerName: "Hunter", previousPlayerName: "Luna" })]);
     const recap = await first.prepareDigest("2026-07-10", snapshot("2026-07-10T10:15:00.000Z"));
     expect(recap?.digest.milestones).toContain("Hunter passed Luna for highest player level (Lv 34) · observed record");
     await first.ackDigest("2026-07-10");
@@ -419,5 +421,6 @@ describe("ObservationTracker", () => {
       players: [player({ level: 33 }), player({ uid: "u2", name: "Hunter", level: 34, playtimeSec: 10 * 3_600 })],
     }));
     expect(repeated.filter((event) => event.kind === "record")).toEqual([]);
+    expect(restarted.recordHistory()).toHaveLength(1);
   });
 });

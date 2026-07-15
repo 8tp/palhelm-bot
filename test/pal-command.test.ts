@@ -23,7 +23,7 @@ describe("/pal detail", () => {
     const fields = instanceFields(pal, known, "Hunter");
     expect(fields.find((field) => field.name.startsWith("Work suitability"))?.value).toContain("Mining **4**");
     expect(fields.find((field) => field.name.startsWith("Learnset"))?.name).toContain("not equipped skills");
-    expect(fields.find((field) => field.name === "Individual save data")?.value).toContain("pending panel contract");
+    expect(fields.find((field) => field.name === "Individual save data")?.value).toContain("unavailable for this Pal");
   });
 
   it("renders rich individual values only when the panel supplies them", () => {

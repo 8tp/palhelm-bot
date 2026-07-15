@@ -13,13 +13,13 @@ describe("PlayerLinkService", () => {
     await service.claim({ guildId: "g", discordUserId: "d1", playerUid: "p1", playerName: "Hunter" });
     await expect(service.claim({ guildId: "g", discordUserId: "d2", playerUid: "p1", playerName: "Hunter" }))
       .rejects.toThrow("player_claimed");
-    await service.claim({ guildId: "g", discordUserId: "d1", playerUid: "p2", playerName: "Ryfyshy" });
+    await service.claim({ guildId: "g", discordUserId: "d1", playerUid: "p2", playerName: "Player Two" });
     expect(service.get("g", "d1")).toMatchObject({ playerUid: "p2", method: "self" });
     expect(service.getByPlayer("g", "p1")).toBeNull();
 
     const reopened = new PlayerLinkService(path);
     await reopened.init();
-    expect(reopened.get("g", "d1")?.playerName).toBe("Ryfyshy");
+    expect(reopened.get("g", "d1")?.playerName).toBe("Player Two");
     expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ version: 1 });
   });
 

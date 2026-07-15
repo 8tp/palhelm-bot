@@ -42,7 +42,7 @@ export const trendsCommand: Command = {
     const snapshot = await ctx.snapshots.get();
     const report = ctx.observations.trends(window.ms, snapshot);
 
-    const embed = baseEmbed(`📈 ${ctx.config.serverLabel} trends — ${window.label}`);
+    const embed = baseEmbed(`📈 ${ctx.config.serverLabel} Trends — ${window.label}`);
     if (!report || report.players.length === 0) {
       embed.setDescription(
         "Not enough tracked history yet. Trends need a little time to accumulate after the bot starts watching the server.",

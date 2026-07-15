@@ -20,6 +20,14 @@ describe("command help catalog", () => {
     );
   });
 
+  it("leaves admin command visibility to the configured runtime role gate", () => {
+    const adminCommands = commands.filter((command) => command.adminOnly);
+    expect(adminCommands.length).toBeGreaterThan(0);
+    for (const command of adminCommands) {
+      expect(command.data.toJSON().default_member_permissions ?? null).toBeNull();
+    }
+  });
+
   it("keeps the README command table in sync with the registry", async () => {
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
     const documented = [...readme.matchAll(/^\| `\/([a-z]+)(?:\s[^`]*)?` \|/gm)]
