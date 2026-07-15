@@ -10,6 +10,13 @@ let usageDay = "";
 let dailyRequests = 0;
 const lastRequestAt = new Map<string, number>();
 
+/** Public /ask presentation: concise provenance without internal diagnostics. */
+export function buildAskAnswerEmbed(answer: string) {
+  return baseEmbed("🤖 Palhelm Guide")
+    .setDescription(truncate(answer, 4096))
+    .setFooter({ text: "AI Generated" });
+}
+
 export const askCommand: Command = {
   helpCategory: "assistant",
   data: new SlashCommandBuilder()
@@ -107,16 +114,7 @@ export const askCommand: Command = {
         playerLink ? { playerUid: playerLink.playerUid } : undefined,
       );
       await statusChain.catch(() => {}); // let any in-flight status edit settle first
-      const grounding = result.toolCalls > 0
-        ? `grounded with ${result.toolCalls} read-only tool call${result.toolCalls === 1 ? "" : "s"}`
-        : "general Palworld knowledge";
-      const embed = baseEmbed("🤖 Palhelm Guide")
-        .setDescription(truncate(result.answer, 4096))
-        .setFooter({
-          text: result.webSearchUsed
-            ? `AI-generated · ${grounding} · ${result.staleWebSearchUsed ? "stale cached web source; " : ""}web facts may be version-sensitive`
-            : `AI-generated · ${grounding} · verify important details`,
-        });
+      const embed = buildAskAnswerEmbed(result.answer);
       await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
       finishStage();
       console.log(

@@ -36,7 +36,7 @@ const pal: PalKnowledge = {
 describe("dex interactive sections", () => {
   it("keeps section payloads focused and complete", () => {
     expect(dexSectionFields(pal, "overview").map((field) => field.name)).toEqual(["Elements", "Base scaling", "Breeding", "Wild profile"]);
-    expect(dexSectionFields(pal, "work")[0]?.value).toBe("Handiwork 4 · Mining 3");
+    expect(dexSectionFields(pal, "work")[0]?.value).toBe("Handiwork Lv 4 · Mining Lv 3");
     expect(dexSectionFields(pal, "combat").find((field) => field.name === "Active-skill learnset")?.value).toContain("Stone Blast");
     expect(dexSectionFields(pal, "breeding").find((field) => field.name === "Dataset coverage")).toBeDefined();
     expect(dexSectionFields(pal, "field")[0]?.value).toContain("source links");

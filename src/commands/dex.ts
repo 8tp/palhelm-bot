@@ -51,7 +51,7 @@ function sectionRow(customId: string, current: DexSection, disabled = false): Ac
 
 export function dexSectionFields(known: PalKnowledge, section: DexSection): APIEmbedField[] {
   const work = known.workSuitabilities.length
-    ? [...known.workSuitabilities].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name)).map((item) => `${item.name} ${item.level}`).join(" · ")
+    ? [...known.workSuitabilities].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name)).map((item) => `${item.name} Lv ${item.level}`).join(" · ")
     : "No work suitability";
   const learnset = known.learnset.length
     ? known.learnset.map((skill) => {

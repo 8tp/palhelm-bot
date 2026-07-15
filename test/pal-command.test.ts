@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { instanceFields } from "../src/commands/pal.js";
+import { instanceFields, placementLabel } from "../src/commands/pal.js";
 import type { PalKnowledge } from "../src/knowledge/paldeck.js";
 import type { RosterPal } from "../src/types.js";
 
@@ -21,7 +21,7 @@ const known = {
 describe("/pal detail", () => {
   it("labels species knowledge separately from unavailable individual save data", () => {
     const fields = instanceFields(pal, known, "Player One");
-    expect(fields.find((field) => field.name.startsWith("Work suitability"))?.value).toContain("Mining **4**");
+    expect(fields.find((field) => field.name.startsWith("Work suitability"))?.value).toContain("Mining **Lv 4**");
     expect(fields.find((field) => field.name.startsWith("Learnset"))?.name).toContain("not equipped skills");
     expect(fields.find((field) => field.name === "Individual save data")?.value).toContain("unavailable for this Pal");
   });
@@ -35,5 +35,17 @@ describe("/pal detail", () => {
     expect(detail).toContain("Current HP: 1234");
     expect(detail).toContain("Passives: Legend");
     expect(detail).toContain("Equipped: Rock Lance");
+  });
+
+  it("does not expose save or base identifiers in player-facing placement text", () => {
+    const baseWorker = {
+      ...pal,
+      inParty: false,
+      partySlot: null,
+      placement: "base" as const,
+      baseId: "0123456789abcdef0123456789abcdef",
+    };
+    expect(placementLabel(baseWorker)).toBe("Base worker");
+    expect(placementLabel(baseWorker)).not.toContain(baseWorker.baseId);
   });
 });

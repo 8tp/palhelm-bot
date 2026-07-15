@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { answerQuestion, collectionProgressScope, formatCollectionProgressEvidence, formatOwnedWorkerEvidence, isIncompleteAnswer, isPersonalPartyRequest, normalizeAiToolName, personalWorkQuery, sanitizeAnswer } from "../src/ai/assistant.js";
+import {
+  answerQuestion,
+  collectionProgressScope,
+  formatCollectionProgressEvidence,
+  formatOwnedWorkerEvidence,
+  isIncompleteAnswer,
+  isPersonalPartyRequest,
+  normalizeAiToolName,
+  personalWorkQuery,
+  sanitizeAnswer,
+  serializeToolResultForModel,
+} from "../src/ai/assistant.js";
 import { OpenRouterError, type OpenRouterClient } from "../src/ai/openrouter.js";
 
 describe("sanitizeAnswer", () => {
@@ -29,6 +40,57 @@ describe("sanitizeAnswer", () => {
     expect(answer).not.toContain("|---");
     expect(answer).toContain("**1. Anubis**\nJob: Mining · Reason: Mining Lv 3");
     expect(answer).toContain("**2. Wumpo**\nJob: Transport · Reason: Strong carry speed");
+  });
+
+  it("redacts raw identifiers in prose and model-authored URLs", () => {
+    const playerUid = "0123456789abcdef0123456789abcdef";
+    const instanceId = "11111111-2222-4333-8444-555555555555";
+    const saveHash = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    const source = "https://example.com/revision/abcdefabcdefabcdefabcdefabcdefabcdefabcdef";
+    const answer = sanitizeAnswer(
+      `Player UID: ${playerUid}\nInstance ID: ${instanceId}\nSave hash: ${saveHash}\nSource: ${source}`,
+    );
+    expect(answer).not.toContain(playerUid);
+    expect(answer).not.toContain(instanceId);
+    expect(answer).not.toContain(saveHash);
+    expect(answer).not.toContain(source);
+    expect(answer).toContain("https://example.com/revision/redacted-id");
+    expect(answer).not.toContain("@");
+  });
+});
+
+describe("model-safe tool serialization", () => {
+  it("uses stable aliases for keyed and positional IDs without mutating internal evidence", () => {
+    const playerUid = "0123456789abcdef0123456789abcdef";
+    const instanceId = "11111111-2222-4333-8444-555555555555";
+    const positionalInstanceId = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+    const saveHash = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    const evidence = {
+      data: {
+        player: { uid: playerUid, name: "Player One" },
+        ownerUid: playerUid,
+        instance: { instanceId, displayName: "Mammorest" },
+        saveHash,
+        workerColumns: ["name", "instanceId"],
+        workers: [["Mammorest", positionalInstanceId]],
+      },
+    };
+
+    const serialized = serializeToolResultForModel(evidence);
+    const payload = JSON.parse(serialized);
+
+    expect(serialized).not.toContain(playerUid);
+    expect(serialized).not.toContain(instanceId);
+    expect(serialized).not.toContain(positionalInstanceId);
+    expect(serialized).not.toContain(saveHash);
+    expect(payload.data.player.uid).toBe("player-1");
+    expect(payload.data.ownerUid).toBe("player-1");
+    expect(payload.data.instance.instanceId).toMatch(/^pal-\d+$/);
+    expect(payload.data.workers[0][1]).toMatch(/^pal-\d+$/);
+    expect(payload.data.workers[0][1]).not.toBe(payload.data.instance.instanceId);
+    expect(payload.data.saveHash).toBe("save-1");
+    expect(evidence.data.player.uid).toBe(playerUid);
+    expect(evidence.data.workers[0]![1]).toBe(positionalInstanceId);
   });
 });
 
@@ -293,7 +355,8 @@ describe("answerQuestion tool loop", () => {
     expect(complete.mock.calls[0]![0].messages[0].content).toContain("player value self");
     expect(complete.mock.calls[0]![0].messages[1].content).toBe("What Pals do I own?");
     const toolMessage = complete.mock.calls[1]![0].messages.find((message: { role: string }) => message.role === "tool");
-    expect(JSON.parse(toolMessage.content)).toMatchObject({ data: { subject: { uid: "player-uid" } } });
+    expect(toolMessage.content).not.toContain("player-uid");
+    expect(JSON.parse(toolMessage.content)).toMatchObject({ data: { subject: { uid: "player-1" } } });
   });
 
   it("executes a bounded read-only tool loop and returns the final answer", async () => {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 — 2026-07-15
+
+- Redacted player, owner, Pal-instance, guild, base, and save identifiers before
+  AI tool evidence reaches the provider, and scrubbed identifiers repeated in
+  model-authored prose or URLs while preserving deterministic source citations.
+- Simplified `/ask` responses to a concise `AI Generated` footer while retaining
+  attributed source links in the answer body.
+- Removed raw Pal-instance and base identifiers from `/pal` output and made work
+  suitability levels explicit across `/pal` and `/dex`.
+- Added a deterministic, network-free `/ask` replay suite covering ownership,
+  live workers, collection progress, knowledge, breeding, movement, malformed
+  responses, empty evidence, identifier privacy, and citations.
+
 ## 0.2.0 — 2026-07-15
 
 - Added exact live base-worker tools backed by Palhelm's redacted Integration API.
