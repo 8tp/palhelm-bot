@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   AttachmentBuilder,
   ComponentType,
+  escapeMarkdown,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
 } from "discord.js";
@@ -10,18 +11,21 @@ import type { Command } from "../discord/commands.js";
 import { baseEmbed, truncate } from "../discord/embeds.js";
 import { assetsFor } from "../discord/palrender.js";
 import type { PalKnowledge } from "../knowledge/paldeck.js";
+import type { WebSearchResponse } from "../ai/websearch.js";
+import type { PalLocationRow } from "../knowledge/locations.js";
 import { snapshotWarning } from "../snapshots/presentation.js";
 import { baseCharacterId, isBossVariant, palOwnerLabel, palVariantTags } from "../pals/presentation.js";
 import { exactKnowledgeFor, metadataLabel, readyKnowledge } from "./pal-toolbox.js";
 
 const COLLECTOR_MS = 180_000;
-export type DexSection = "overview" | "work" | "combat" | "breeding";
+export type DexSection = "overview" | "work" | "combat" | "breeding" | "field";
 
 const SECTION_LABELS: Record<DexSection, string> = {
   overview: "Overview",
   work: "Work & needs",
   combat: "Combat & learnset",
   breeding: "Breeding & data coverage",
+  field: "Drops & locations (sourced)",
 };
 
 export function dexControlError(expectedCustomId: string, actualCustomId: string, requesterId: string, actorId: string, value?: string): string | null {
@@ -77,12 +81,53 @@ export function dexSectionFields(known: PalKnowledge, section: DexSection): APIE
     { name: "Wild profile", value: `Lv ${known.minWildLevel}–${known.maxWildLevel} · Size ${known.size} · ${known.nocturnal ? "Nocturnal" : "Diurnal"} · Value ${known.price?.toLocaleString("en-US") ?? "unknown"}`, inline: true },
     { name: "Dataset coverage", value: "Partner skills, drops, spawn coordinates, recipes, and technology unlocks are not present in the approved pinned sources." },
   ];
+  if (section === "field") return [{
+    name: "Drops & locations",
+    value: "Select this section to load a cached, web-backed field guide with source links.",
+  }];
   return [
     { name: "Elements", value: known.elements.join(" · ") || "Unknown", inline: true },
     { name: "Base scaling", value: `HP ${known.hp} · ATK ${known.attack} · DEF ${known.defense}`, inline: true },
     { name: "Breeding", value: `Power ${known.breedingPower} · Rarity ${known.rarity}`, inline: true },
     { name: "Wild profile", value: `Lv ${known.minWildLevel}–${known.maxWildLevel} · Size ${known.size} · ${known.nocturnal ? "Nocturnal" : "Diurnal"} · Value ${known.price?.toLocaleString("en-US") ?? "unknown"}` },
   ];
+}
+
+export function dexFieldGuideFields(response: WebSearchResponse | null): APIEmbedField[] {
+  if (!response || response.results.length === 0) return [{
+    name: "Web field guide",
+    value: "No sourced field-guide results are available right now. The pinned Paldeck details above remain usable offline.",
+  }];
+  const lines = response.results.slice(0, 4).map((result) => {
+    const title = escapeMarkdown(truncate(result.title.replace(/[\r\n\t]+/g, " ").trim() || "Source", 100));
+    const snippet = escapeMarkdown(truncate(result.content.replace(/[\r\n\t]+/g, " ").trim(), 220));
+    return `• [${title}](${result.url})${snippet ? ` — ${snippet}` : ""}`;
+  });
+  const freshness = response.cacheStatus === "stale_cache"
+    ? "Cached source results (search is currently offline)"
+    : response.cacheStatus === "fresh_cache" ? "Cached source results" : "Fresh source results";
+  return [
+    { name: "Web sources", value: truncate(lines.join("\n"), 1024) },
+    { name: "Source freshness", value: `${freshness}. Web snippets can be version-sensitive; open the linked page for full context.` },
+  ];
+}
+
+export function dexLocationFields(rows: readonly PalLocationRow[]): APIEmbedField[] {
+  if (rows.length === 0) return [];
+  const exact = rows.filter((row) => row.coords !== null).slice(0, 10);
+  const habitats = [...new Set(rows.map((row) => row.locationName).filter(Boolean))].slice(0, 18);
+  const lines = exact.map((row) => {
+    const variant = row.variantType ? `${row.variantType} ` : "";
+    const level = row.level === null ? "" : ` Lv ${row.level}`;
+    return `• ${variant}${row.locationName}${level} · **(${row.coords!.x}, ${row.coords!.y})**`;
+  });
+  return [{
+    name: "Wiki encounter locations",
+    value: truncate(lines.length > 0 ? `${lines.join("\n")}\nHabitats: ${habitats.join(" · ")}` : `Habitats: ${habitats.join(" · ")}`, 1024),
+  }, {
+    name: "Location data source",
+    value: "[The Palworld Wiki LocationEntity table](https://palworld.wiki.gg/wiki/Template:Entity_Location_Spawn) · CC BY-SA 4.0 · cached locally. Coordinates are in-game map coordinates, not raw server world positions.",
+  }];
 }
 
 export const dexCommand: Command = {
@@ -123,6 +168,7 @@ export const dexCommand: Command = {
       await interaction.editReply({ embeds: [baseEmbed("Pal not found").setDescription(`No Palworld 1.0 Pal matched **${truncate(query, 100)}**.`)] });
       return;
     }
+    const palName = known.name;
 
     const snapshot = await ctx.snapshots.get();
     const matches = snapshot.pals.filter((pal) => {
@@ -141,11 +187,15 @@ export const dexCommand: Command = {
       ? `**On ${ctx.config.serverLabel}:** ${matches.length} currently owned by ${owners.size} player${owners.size === 1 ? "" : "s"}\n**Highest:** Lv ${best!.level}${palVariantTags(best!)} — ${truncate(bestOwner!, 80)}\n**Rare:** ${bosses} Boss 👑 · ${Math.max(0, alpha)} Alpha ⭐ · ${lucky} Lucky 🍀`
       : `**On ${ctx.config.serverLabel}:** None currently observed`;
     let icon: Awaited<ReturnType<ReturnType<typeof assetsFor>["palIcon"]>> | null = null;
+    let fieldGuide: APIEmbedField[] | null = null;
+    let fieldGuideLoading = false;
     const render = (section: DexSection): InteractionEditReplyOptions => {
       const embed = baseEmbed(`📖 #${known.dexNumber}${known.isVariant ? " variant" : ""} · ${truncate(known.name, 190)}`)
         .setURL(wikiUrl)
         .setDescription(truncate(`${warning ? `${warning}\n\n` : ""}${ownership}\n\n[Open ${known.name} on the Palworld Wiki](${wikiUrl})`, 4096))
-        .addFields(dexSectionFields(known, section))
+        .addFields(section === "field"
+          ? fieldGuide ?? [{ name: "Drops & locations", value: fieldGuideLoading ? "Searching the cached Palworld field guide…" : "Select this section to load sourced results." }]
+          : dexSectionFields(known, section))
         .setFooter({ text: truncate(`${SECTION_LABELS[section]} · ${metadataLabel(ctx.knowledge)} · ID: ${known.internalId}`, 2048) });
       if (icon) embed.setThumbnail("attachment://pal-icon.png");
       return { embeds: [embed], components: [sectionRow(`dex_section:${interaction.id}`, section)] };
@@ -174,7 +224,24 @@ export const dexCommand: Command = {
           return;
         }
         section = next as DexSection;
+        if (section !== "field" || fieldGuide) {
+          await select.update(render(section)).catch(() => {});
+          return;
+        }
+        fieldGuideLoading = true;
         await select.update(render(section)).catch(() => {});
+        try {
+          const localLocations = ctx.locations.search(palName);
+          const response = ctx.webSearch
+            ? await ctx.webSearch.search(`Palworld 1.0 ${palName} drops location habitat site:palworld.wiki.gg`)
+            : null;
+          fieldGuide = [...dexLocationFields(localLocations), ...dexFieldGuideFields(response)];
+        } catch {
+          fieldGuide = [...dexLocationFields(ctx.locations.search(palName)), ...dexFieldGuideFields(null)];
+        } finally {
+          fieldGuideLoading = false;
+        }
+        await interaction.editReply({ ...render(section), allowedMentions: { parse: [] } }).catch(() => {});
       });
       collector.on("end", async () => {
         await interaction.editReply({ components: [sectionRow(customId, section, true)] }).catch(() => {});

@@ -1,7 +1,8 @@
 /** Small, versioned general-knowledge corpus for common questions.
  *
- * The adapted factual summaries are CC BY-SA 4.0; see THIRD_PARTY-NOTICES.md.
- * Keep this deliberately small and attributable. Web search fills gaps.
+ * Community-wiki summaries are CC BY-SA 4.0; official patch summaries retain
+ * their source attribution. Keep this deliberately small and attributable.
+ * Web search fills gaps.
  */
 export interface GeneralKnowledgeEntry {
   id: string;
@@ -10,12 +11,40 @@ export interface GeneralKnowledgeEntry {
   facts: string[];
   sourceUrl: string;
   sourceLabel: string;
+  license?: string;
 }
 
-export const GENERAL_KNOWLEDGE_VERSION = "palworld-1.0-2026-07-11";
+export const GENERAL_KNOWLEDGE_VERSION = "palworld-1.0.1-2026-07-15";
 export const GENERAL_KNOWLEDGE_LICENSE = "CC BY-SA 4.0";
 
 const ENTRIES: GeneralKnowledgeEntry[] = [
+  {
+    id: "palworld-1-0-release",
+    title: "Palworld v1.0 Official Release",
+    aliases: ["palworld 1.0", "version 1.0", "1.0 patch notes", "official release changelog"],
+    facts: [
+      "Palworld 1.0 added Sunreach and the World Tree, 72 Pals (47 new species and 25 variants), Awakening and Mutation, and broad world, story, combat, base, multiplayer, and graphics changes.",
+      "The official 1.0 notes raised the player level cap from 65 to 80 and rebalanced Pal habitats and spawn levels.",
+      "The release notes are not a spawn-coordinate dataset; catch guidance still needs separately sourced encounter data.",
+    ],
+    sourceUrl: "https://steamcommunity.com/app/1623730/announcements/detail/1814942955087349",
+    sourceLabel: "Pocketpair — Palworld v1.0 Official Release Changelog",
+    license: "Pocketpair official release notes; summarized for factual reference",
+  },
+  {
+    id: "palworld-1-0-1-hotfix",
+    title: "Palworld v1.0.1 Hotfix",
+    aliases: ["palworld 1.0.1", "version 1.0.1", "1.0.1 patch notes", "100619", "save discard hotfix"],
+    facts: [
+      "Pocketpair released Palworld v1.0.1 on July 15, 2026 as a bug-fix hotfix.",
+      "It fixed an issue where save data could be unintentionally discarded after certain operations.",
+      "It fixed an issue where the burning status could continue after touching a campfire.",
+      "The official PC announcement did not list new Pals, content, balance, performance, or Game Data API changes.",
+    ],
+    sourceUrl: "https://store.steampowered.com/news/posts/?enddate=1784093964&feed=steam_community_announcements",
+    sourceLabel: "Pocketpair — v1.0.1: Bug fixes",
+    license: "Pocketpair official release notes; summarized for factual reference",
+  },
   {
     id: "meteorite-fragment",
     title: "Meteorite Fragment",
@@ -106,10 +135,18 @@ export function searchGeneralKnowledge(query: string, limit = 3): GeneralKnowled
       const aliases = entry.aliases.map(normalize);
       const searchable = `${title} ${aliases.join(" ")} ${entry.facts.map(normalize).join(" ")}`;
       const exact = title === normalized || aliases.includes(normalized);
-      const phrase = title.includes(normalized) || normalized.includes(title) ||
-        aliases.some((alias) => alias.includes(normalized) || normalized.includes(alias));
+      const matchingPhrases = [title, ...aliases].filter((phrase) =>
+        phrase.includes(normalized) || normalized.includes(phrase)
+      );
+      const phraseSpecificity = matchingPhrases.reduce(
+        (best, phrase) => Math.max(best, phrase.split(" ").length),
+        0,
+      );
       const matchedTerms = terms.filter((term) => searchable.includes(term)).length;
-      return { entry, score: exact ? 100 : phrase ? 50 + matchedTerms : matchedTerms };
+      return {
+        entry,
+        score: exact ? 1_000 : phraseSpecificity > 0 ? 100 + (phraseSpecificity * 10) + matchedTerms : matchedTerms,
+      };
     })
     .filter((item) => item.score > 0 && (
       item.score >= 50 || item.score >= (terms.length === 1 ? 1 : Math.max(2, Math.ceil(terms.length / 2)))

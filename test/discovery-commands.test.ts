@@ -116,7 +116,10 @@ function harness(options: Record<string, string | null>, source: WorldSnapshot =
   };
   const ctx = {
     snapshots: { get: vi.fn().mockResolvedValue(source) },
-    observations: { trackingStartedAt: vi.fn(() => "2026-07-01T00:00:00.000Z") },
+    observations: {
+      trackingStartedAt: vi.fn(() => "2026-07-01T00:00:00.000Z"),
+      recordHistory: vi.fn(() => []),
+    },
     config: { suppressDriftNotices: true, serverLabel: "the server" },
     session: { binary },
     knowledge,
@@ -132,6 +135,7 @@ describe("records, collection, and dex commands", () => {
   it("renders current records without a suppressed drift warning", async () => {
     const { interaction, editReply, ctx } = harness({});
     await recordsCommand.execute(interaction as never, ctx as never);
+    expect(json(editReply).title).toBe("📚 the server Records");
     const embed = json(editReply);
     expect(embed.description ?? "").not.toContain("format drift");
     expect(embed.fields?.find((field: { name: string }) => field.name === "Highest-level Pal")?.value).toContain("Lv 42 Anubis ⭐ — Luna");
@@ -207,7 +211,7 @@ describe("records, collection, and dex commands", () => {
     expect(embed.description).toContain("Open Anubis on the Palworld Wiki");
     expect(embed.url).toBe("https://palworld.wiki.gg/wiki/Anubis");
     expect(payload.components[0].toJSON().components[0].custom_id).toBe("dex_section:interaction-1");
-    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/Anubis");
+    expect(binary).toHaveBeenCalledWith("/api/v1/paldeck/icon/anubis");
   });
 
   it("ranks breeding pairs by currently observed parents", async () => {

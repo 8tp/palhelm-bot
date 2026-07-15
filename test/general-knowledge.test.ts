@@ -15,11 +15,19 @@ describe("general Palworld knowledge corpus", () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
-        version: "palworld-1.0-2026-07-11",
-        license: "CC BY-SA 4.0",
+        version: "palworld-1.0.1-2026-07-15",
+        license: "per-entry; see license and source URL",
       },
     });
     expect((result.data as { entries: Array<{ id: string }> }).entries[0]?.id).toBe("ancient-civilization-core");
     expect(JSON.stringify(result)).toContain("https://palworld.wiki.gg/");
+  });
+
+  it("includes the official 1.0.1 hotfix notes", async () => {
+    const results = await searchGeneralKnowledge("what changed in Palworld 1.0.1?");
+
+    expect(results[0]?.id).toBe("palworld-1-0-1-hotfix");
+    expect(results[0]?.facts.join(" ")).toContain("save data could be unintentionally discarded");
+    expect(results[0]?.sourceUrl).toMatch(/^https:\/\//);
   });
 });

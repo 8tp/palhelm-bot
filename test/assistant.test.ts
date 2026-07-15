@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { answerQuestion, isPersonalPartyRequest, normalizeAiToolName, sanitizeAnswer } from "../src/ai/assistant.js";
+import { answerQuestion, collectionProgressScope, formatCollectionProgressEvidence, formatOwnedWorkerEvidence, isIncompleteAnswer, isPersonalPartyRequest, normalizeAiToolName, personalWorkQuery, sanitizeAnswer } from "../src/ai/assistant.js";
 import { OpenRouterError, type OpenRouterClient } from "../src/ai/openrouter.js";
 
 describe("sanitizeAnswer", () => {
@@ -32,6 +32,14 @@ describe("sanitizeAnswer", () => {
   });
 });
 
+describe("incomplete provider answers", () => {
+  it("detects short promises to do work without rejecting a completed answer", () => {
+    expect(isIncompleteAnswer("Let me check that for you.")).toBe(true);
+    expect(isIncompleteAnswer("I'll look that up.")).toBe(true);
+    expect(isIncompleteAnswer("Jetragon has a ride sprint value of 3300.")).toBe(false);
+  });
+});
+
 describe("normalizeAiToolName", () => {
   it("repairs a unique close provider typo without accepting unrelated tools", () => {
     expect(normalizeAiToolName("get_pal_kal_knowledge")).toBe("get_pal_knowledge");
@@ -49,7 +57,118 @@ describe("personal party guard", () => {
   });
 });
 
+describe("personal worker guard", () => {
+  it("recognizes owned worker requests and renders only deterministic tool entries", () => {
+    expect(personalWorkQuery("Which of my Pals are best at Mining?")).toBe("Mining");
+    expect(personalWorkQuery("Who is best at Mining server-wide?")).toBeNull();
+    const answer = formatOwnedWorkerEvidence({
+      ok: true,
+      data: {
+        work: "Mining",
+        total: 1,
+        workers: [{ displayName: "Anubis", workLevel: 3, palLevel: 35, alpha: true, lucky: false }],
+      },
+    } as never);
+    expect(answer).toContain("Anubis");
+    expect(answer).toContain("only your currently observed owned Pals");
+    expect(answer).not.toContain("Fenglope");
+  });
+});
+
 describe("answerQuestion", () => {
+  it("does not accept a bare let-me-check deferral as the final answer", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce({
+        message: { role: "assistant", content: "Let me check that for you." },
+        finishReason: "stop",
+      })
+      .mockResolvedValueOnce({
+        message: {
+          role: "assistant",
+          content: null,
+          toolCalls: [{ id: "status-1", name: "get_server_status", arguments: {}, argumentsJson: "{}" }],
+        },
+        finishReason: "tool_calls",
+      })
+      .mockResolvedValueOnce({
+        message: { role: "assistant", content: "The server is online at 59 FPS." },
+        finishReason: "stop",
+      });
+    const ctx = {
+      config: { serverLabel: "Example Pals" },
+      snapshots: { get: vi.fn().mockResolvedValue({
+        capturedAt: new Date().toISOString(), lastParseAt: null, formatDrift: false,
+        metricsCurrent: { fps: 59, fpsAvg: 59, frameTimeMs: 17, players: 0, maxPlayers: 16, day: 254, uptimeSec: 60, baseCamps: 20 },
+        server: { name: "Example Pals", description: "", version: "1.0", state: "running", uptimeSec: 60 },
+        players: [], pals: [], guilds: [],
+      }) },
+    };
+
+    const result = await answerQuestion(
+      { complete } as unknown as OpenRouterClient,
+      ctx as never,
+      "What is the server status?",
+    );
+
+    expect(result).toMatchObject({ answer: "The server is online at 59 FPS.", modelCalls: 3, toolCalls: 1 });
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls[1]![0].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", content: expect.stringContaining("Do not promise to check later") }),
+    ]));
+  });
+
+  it("prefetches canonical missing-species counts before asking the model", async () => {
+    const complete = vi.fn().mockResolvedValue({
+      message: { role: "assistant", content: "There are **2** missing: **1 / 3 species** are represented." },
+      finishReason: "stop",
+    });
+    const catalogue = [
+      { internalId: "SheepBall", name: "Lamball" },
+      { internalId: "Anubis", name: "Anubis" },
+      { internalId: "JetDragon", name: "Jetragon" },
+    ];
+    const knowledge = {
+      init: vi.fn().mockResolvedValue(undefined),
+      status: vi.fn(() => ({ ready: true })),
+      list: vi.fn(() => ({ data: catalogue })),
+      get: vi.fn((query: string) => ({
+        data: catalogue.find((pal) => pal.internalId.toLowerCase() === query.toLowerCase()) ?? null,
+      })),
+    };
+    const ctx = {
+      config: { serverLabel: "Example Pals" },
+      knowledge,
+      snapshots: { get: vi.fn().mockResolvedValue({
+        capturedAt: new Date().toISOString(), lastParseAt: null, formatDrift: false,
+        metricsCurrent: null, server: null, players: [], guilds: [],
+        pals: [{
+          instanceId: "pal-1", characterId: "SheepBall", displayName: "Lamball", level: 2,
+          isAlpha: false, isLucky: false, ownerUid: "u1", ownerName: "Player",
+        }],
+      }) },
+    };
+
+    const result = await answerQuestion(
+      { complete } as unknown as OpenRouterClient,
+      ctx as never,
+      "How many species have yet to be caught?",
+    );
+
+    expect(collectionProgressScope("How many species have yet to be caught?")).toBe("server");
+    expect(collectionProgressScope("How many of my Pals are left to catch?")).toBe("self");
+    expect(result).toMatchObject({ modelCalls: 1, toolCalls: 1 });
+    expect(result.answer).toContain("2");
+    expect(result.answer).toContain("1 / 3 species");
+    expect(complete).toHaveBeenCalledOnce();
+    expect(complete.mock.calls[0]![0].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "tool", name: "get_collection" }),
+    ]));
+  });
+
+  it("formats only complete canonical collection evidence", () => {
+    expect(formatCollectionProgressEvidence({ ok: true, data: { observedSpecies: 5 } }, "Example Pals")).toBeNull();
+  });
+
   it("retries instead of leaking tool-call markup emitted as plain text", async () => {
     const complete = vi.fn()
       .mockResolvedValueOnce({
@@ -113,6 +232,27 @@ describe("answerQuestion tool loop", () => {
     expect(complete).toHaveBeenCalledTimes(3);
     expect(complete.mock.calls[2]![0].tools).toBeUndefined();
     expect(complete.mock.calls[2]![0].messages[1].content).toContain("get_records:");
+  });
+
+  it("falls back to exact live worker evidence when synthesis times out twice", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce({
+        message: { role: "assistant", content: null, toolCalls: [{ id: "workers", name: "get_live_base_workers", arguments: { player: "self" }, argumentsJson: "{\"player\":\"self\"}" }] },
+        finishReason: "tool_calls",
+      })
+      .mockRejectedValueOnce(new OpenRouterError("timeout", "slow", true))
+      .mockRejectedValueOnce(new OpenRouterError("timeout", "still slow", true));
+    const snapshot = {
+      capturedAt: new Date().toISOString(), lastParseAt: null, formatDrift: false, metricsCurrent: null, server: null,
+      players: [{ uid: "u1", name: "Hunter", online: true, level: 40, guildId: "g1", guildName: "Guild", firstSeenAt: "2026-01-01T00:00:00Z", lastSeenAt: "2026-07-15T00:00:00Z", playtimeSec: 100 }],
+      guilds: [{ id: "g1", name: "Guild", adminUid: "u1", memberCount: 1, members: [{ uid: "u1", name: "Hunter" }], bases: [{ id: "b1", location: { x: 0, y: 0 }, level: 1 }] }],
+      pals: [],
+      liveWorkers: { state: "ready", capturedAt: new Date().toISOString(), workers: [{ instanceId: "p1", characterId: "Anubis", displayName: "Anubis", isBoss: false, level: 35, hpPercent: 18, active: true, activity: "working", baseId: "b1", ownerUid: "u1", ownerName: "Hunter", ownerSource: "save" }] },
+    };
+    const ctx = { config: { serverLabel: "Example Pals" }, snapshots: { get: vi.fn().mockResolvedValue(snapshot) } };
+    const result = await answerQuestion({ complete } as unknown as OpenRouterClient, ctx as never, "What is happening at my base?", undefined, { playerUid: "u1" });
+    expect(result.answer).toContain("Live base workers");
+    expect(result.answer).toContain("Anubis — Lv 35 · working · 18% HP");
   });
 
   it("grounds first-person tools through a linked player UID without exposing it in the user question", async () => {
@@ -383,6 +523,7 @@ describe("answerQuestion tool loop", () => {
     const result = await answerQuestion(client, { webSearch, config: { serverLabel: "the server" } } as never, "What are meteorite fragments for?");
 
     expect(result).toMatchObject({ toolCalls: 1, webSearchUsed: false });
+    expect(result.answer).toContain("https://palworld.wiki.gg/wiki/Meteorite_Fragment");
     expect(webSearch.search).not.toHaveBeenCalled();
     expect(complete.mock.calls[1]![0].tools).toBeUndefined();
   });
