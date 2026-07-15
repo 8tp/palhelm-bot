@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breedingFeasibilityNotes, selectBreedpathScope } from "../src/commands/breedpath.js";
+import { breedingFeasibilityNotes, passivePlanNote, selectBreedpathScope } from "../src/commands/breedpath.js";
 import type { BreedingStep, PalKnowledge } from "../src/knowledge/paldeck.js";
 
 const pal = (internalId: string): PalKnowledge => ({
@@ -54,5 +54,18 @@ describe("breeding path roster scope", () => {
       kind: "player",
       player: { uid: "luna" },
     });
+  });
+});
+
+describe("breeding passive target", () => {
+  it("finds observed carriers but never guarantees inheritance", () => {
+    const carrier = {
+      instanceId: "a", characterId: "Anubis", displayName: "Anubis", level: 10,
+      isAlpha: false, isLucky: false, ownerUid: "u", ownerName: "Player", gender: "male" as const,
+      passiveSkillIds: ["PassiveSkill_WorkSpeed_Up_3"],
+    };
+    expect(passivePlanNote("work speed", [carrier])).toContain("1 observed carrier");
+    expect(passivePlanNote("work speed", [carrier])).toContain("not guaranteed");
+    expect(passivePlanNote("legend", [carrier])).toContain("No observed scoped Pal");
   });
 });

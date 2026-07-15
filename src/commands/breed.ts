@@ -128,8 +128,8 @@ export const breedCommand: Command = {
         return `${start + index + 1}. ${mark} **${parentLabel(pair.outcome.parent1, pair.outcome.parent1Gender)}** + **${parentLabel(pair.outcome.parent2, pair.outcome.parent2Gender)}**\n${ownershipLabel(pair)}`;
       });
       const embed = baseEmbed(`🥚 Breeding ${truncate(child.name, 220)}`)
-        .setDescription(truncate(`Ownership scope: **${scope}**. ✅ compatible ♂+♀ pair · ⚠️ species owned but genders incompatible/unknown · ◐ one parent · ○ neither\n\n${lines.join("\n\n")}`, 4096))
-        .setFooter({ text: truncate(`${metadataLabel(ctx.knowledge)} · ${pairs.length} unique combinations · page ${target}/${pageCount}`, 2048) });
+        .setDescription(truncate(`Ownership scope: **${scope}**. ✅ compatible ♂+♀ pair · ⚠️ species owned but genders incompatible/unknown · ◐ one parent · ○ neither\nRoutes with deeper owned parent pools rank ahead of scarce-parent routes when feasibility ties.\n\n${lines.join("\n\n")}`, 4096))
+        .setFooter({ text: truncate(`${metadataLabel(ctx.knowledge)} · gender, roster depth, then lower rarity · ${pairs.length} unique combinations · page ${target}/${pageCount}`, 2048) });
       return { embeds: [embed], components: pageCount > 1 ? [breedNavigationRow(interaction.id, target, pageCount, disableAll)] : [] };
     };
 
@@ -168,9 +168,15 @@ function comparePair(a: RankedPair, b: RankedPair): number {
   const availabilityA = pairAvailability(a);
   const availabilityB = pairAvailability(b);
   return availabilityB - availabilityA ||
+    ownedParentDepth(b) - ownedParentDepth(a) ||
     Math.max(a.outcome.parent1.rarity, a.outcome.parent2.rarity) - Math.max(b.outcome.parent1.rarity, b.outcome.parent2.rarity) ||
     a.outcome.parent1.rarity + a.outcome.parent2.rarity - b.outcome.parent1.rarity - b.outcome.parent2.rarity ||
     a.outcome.parent1.name.localeCompare(b.outcome.parent1.name) || a.outcome.parent2.name.localeCompare(b.outcome.parent2.name);
+}
+
+function ownedParentDepth(pair: RankedPair): number {
+  const sameSpecies = pair.outcome.parent1.internalId.toLowerCase() === pair.outcome.parent2.internalId.toLowerCase();
+  return sameSpecies ? pair.first.length : pair.first.length + pair.second.length;
 }
 
 function parentLabel(pal: PalKnowledge, gender: PalGender): string {
