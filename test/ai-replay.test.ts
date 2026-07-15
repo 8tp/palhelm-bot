@@ -17,7 +17,7 @@ const CATTIVA_INSTANCE = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 const GUILD_ID = "12345678-1234-4123-8123-123456789abc";
 const BASE_ID = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 const SAVE_HASH = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-const MATERIAL_SOURCE = "https://example.test/palworld/materials/meteorite-fragment";
+const MATERIAL_SOURCE = "https://example.test/palworld/revision/abcdefabcdefabcdefabcdefabcdefabcdefabcdef";
 const EMPTY_SOURCE = "https://example.test/palworld/empty-note";
 const INVENTED_PAL = "Fictionmon";
 const INVENTED_OWNER = "ShadowOwner";
@@ -327,13 +327,14 @@ describe("deterministic /ask replay regression", () => {
       "What are Meteorite Fragments used for?",
       [
         tool("search_general_palworld_knowledge", { query: "meteorite fragment uses" }),
-        prose("Meteorite Fragments are refined into Plasteel at an Ancient Furnace."),
+        prose(`Meteorite Fragments are refined into Plasteel at an Ancient Furnace. Untrusted mirror: https://untrusted.test/player/${MIRA_UID}`),
       ],
       { linked: false },
     );
 
     expect(result.answer).toContain("Plasteel");
     expect(result.answer).toContain(`Sources: <${MATERIAL_SOURCE}>`);
+    expect(result.answer).toContain("https://untrusted.test/player/redacted-id");
     assertSafeAnswer(result.answer);
   });
 

@@ -123,21 +123,17 @@ export function sanitizeAnswer(raw: string): string {
 
 /** Remove raw save/player/instance identifiers if provider prose repeats one. */
 function redactSensitiveIdentifiers(raw: string): string {
-  const urls: string[] = [];
-  const withoutUrls = raw.replace(/https:\/\/[^\s<>]+/gi, (url) => {
-    const marker = `\u0000URL${urls.length}\u0000`;
-    urls.push(url);
-    return marker;
-  });
-  const redacted = withoutUrls
+  // Model-authored URLs are prose, not trusted citations. Scrub identifier-like
+  // path/query values here as well; appendEvidenceSources adds allowlisted URLs
+  // from deterministic retrieval payloads only after this sanitizer runs.
+  return raw
     .replace(
       /\b((?:player|owner|admin|pal\s*instance|instance|save)\s*(?:uid|id|hash)\s*[:=#-]?\s*)[`]?[-A-Za-z0-9_:]{8,}[`]?/gi,
       "$1[redacted]",
     )
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[redacted id]")
-    .replace(/\b[0-9a-f]{24,}\b/gi, "[redacted id]")
-    .replace(/\b\d{16,20}\b/g, "[redacted id]");
-  return redacted.replace(/\u0000URL(\d+)\u0000/g, (_marker, index: string) => urls[Number(index)] ?? "");
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "redacted-id")
+    .replace(/\b[0-9a-f]{24,}\b/gi, "redacted-id")
+    .replace(/\b\d{16,20}\b/g, "redacted-id");
 }
 
 type IdentifierKind = "player" | "pal" | "guild" | "base" | "save";

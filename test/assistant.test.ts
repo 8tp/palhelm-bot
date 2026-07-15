@@ -42,7 +42,7 @@ describe("sanitizeAnswer", () => {
     expect(answer).toContain("**2. Wumpo**\nJob: Transport · Reason: Strong carry speed");
   });
 
-  it("redacts raw player, instance, and save identifiers while preserving source URLs", () => {
+  it("redacts raw identifiers in prose and model-authored URLs", () => {
     const playerUid = "0123456789abcdef0123456789abcdef";
     const instanceId = "11111111-2222-4333-8444-555555555555";
     const saveHash = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
@@ -53,7 +53,8 @@ describe("sanitizeAnswer", () => {
     expect(answer).not.toContain(playerUid);
     expect(answer).not.toContain(instanceId);
     expect(answer).not.toContain(saveHash);
-    expect(answer).toContain(source);
+    expect(answer).not.toContain(source);
+    expect(answer).toContain("https://example.com/revision/redacted-id");
     expect(answer).not.toContain("@");
   });
 });
